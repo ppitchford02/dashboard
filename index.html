@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PITCHFORD OS</title>
+<style>
+:root{
+  --bg:#080B10; --panel:#0D131B; --line:#1B2532; --hair:#131A24;
+  --dim:#4E5C6E; --mid:#7D8C9E; --text:#C6D2DE;
+  --cyan:#45C8DC; --cyan-dim:#2A6B78; --amber:#D9973C; --red:#C8543F; --green:#4E9E6A;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:var(--bg);}
+body{font-family:var(--mono);color:var(--text);font-size:12px;line-height:1.5;
+     -webkit-font-smoothing:antialiased;padding:14px;}
+
+/* ---- top bar ---- */
+.topbar{display:flex;align-items:center;gap:18px;border:1px solid var(--line);
+        background:var(--panel);padding:9px 14px;margin-bottom:12px;flex-wrap:wrap;}
+.brand{color:var(--cyan);letter-spacing:.22em;white-space:nowrap;}
+.topbar .spacer{flex:1;}
+.stat{display:flex;align-items:baseline;gap:7px;white-space:nowrap;}
+.stat .k{color:var(--dim);font-size:9.5px;letter-spacing:.14em;}
+.stat .v{font-size:11.5px;}
+.v.ok{color:var(--green);} .v.warn{color:var(--amber);} .v.hot{color:var(--red);}
+
+/* ---- view tabs ---- */
+.tabs{display:flex;gap:0;border:1px solid var(--line);border-bottom:none;background:var(--panel);}
+.tab{padding:8px 18px;font-size:9.5px;letter-spacing:.18em;color:var(--dim);
+     background:none;border:none;border-right:1px solid var(--line);cursor:pointer;
+     font-family:var(--mono);}
+.tab.sel{color:var(--cyan);background:#111A24;box-shadow:inset 0 -2px 0 var(--cyan);}
+.tab .n{color:#33404F;margin-left:8px;}
+.tab.sel .n{color:var(--cyan-dim);}
+.viewwrap{border:1px solid var(--line);border-top:none;padding:12px;background:#090D13;}
+.view{display:none;} .view.sel{display:block;}
+
+/* ---- grid ---- */
+.grid{display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:12px;align-items:start;}
+.grid.two{grid-template-columns:1fr 1fr;}
+.col{display:flex;flex-direction:column;gap:12px;}
+
+.panel{border:1px solid var(--line);background:var(--panel);}
+.panel > h2{margin:0;padding:8px 12px;border-bottom:1px solid var(--line);
+  font-size:9.5px;letter-spacing:.18em;color:var(--dim);font-weight:400;
+  display:flex;justify-content:space-between;align-items:center;gap:12px;}
+.panel > h2 .badge{color:var(--cyan);letter-spacing:.08em;font-size:10.5px;}
+.panel > h2 .badge.warn{color:var(--amber);} .panel > h2 .badge.hot{color:var(--red);}
+.panel > h2 .badge.mute{color:#33404F;}
+.body{padding:10px 12px;}
+
+/* ---- rows ---- */
+.row{display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid var(--hair);}
+.row:last-child{border-bottom:none;}
+.dot{width:5px;height:5px;border-radius:50%;flex:0 0 5px;}
+.dot.on{background:var(--green);box-shadow:0 0 6px #4E9E6A;}
+.dot.build{background:var(--amber);}
+.row .name{flex:1;font-size:11.5px;}
+.row .meta{color:var(--dim);font-size:9.5px;letter-spacing:.06em;white-space:nowrap;}
+
+/* ---- core ---- */
+.core{border:1px solid var(--line);padding:22px 20px 16px;text-align:center;
+  background:radial-gradient(circle at 50% 40%, rgba(69,200,220,.09), transparent 62%), var(--panel);}
+.dial{width:112px;height:112px;margin:0 auto 14px;display:block;}
+.hello{color:var(--mid);margin:0 0 3px;} .hello b{color:var(--text);font-weight:400;}
+.sub{color:var(--dim);font-size:10.5px;margin:0 0 16px;}
+.cmd{display:flex;align-items:center;gap:9px;border:1px solid var(--line);
+     background:#070A0E;padding:8px 11px;text-align:left;}
+.cmd .car{color:var(--cyan);} .cmd .ph{color:#33404F;flex:1;font-size:11px;}
+.cmd .st{color:var(--dim);font-size:9px;letter-spacing:.14em;}
+
+.terrain{padding:14px 12px 6px;} .terrain svg{display:block;width:100%;height:auto;}
+.acts{display:flex;border-top:1px solid var(--line);}
+.act{flex:1;padding:9px 12px;color:var(--mid);font-size:10.5px;line-height:1.55;}
+.act + .act{border-left:1px solid var(--line);}
+.act .t{display:block;color:var(--dim);font-size:9px;letter-spacing:.16em;margin-bottom:4px;}
+
+/* ---- attention ---- */
+.att{padding:9px 12px;border-bottom:1px solid var(--hair);display:flex;gap:10px;}
+.att:last-child{border-bottom:none;}
+.att .bar{width:2px;flex:0 0 2px;background:var(--red);}
+.att .bar.med{background:var(--amber);} .att .bar.low{background:var(--cyan-dim);}
+.att .ttl{margin:0 0 3px;font-size:11.5px;}
+.att p{margin:0;color:var(--mid);font-size:10.5px;line-height:1.55;}
+.att .when{color:var(--dim);font-size:9px;letter-spacing:.12em;margin-top:4px;display:block;}
+
+/* ---- schedule ---- */
+.sch{display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--hair);}
+.sch:last-child{border-bottom:none;}
+.sch .tm{color:var(--cyan);font-size:10px;width:62px;flex:0 0 62px;}
+.sch .ev{flex:1;font-size:11px;line-height:1.45;}
+.sch .ev small{display:block;color:var(--dim);font-size:9.5px;margin-top:2px;}
+.daysep{color:var(--dim);font-size:9px;letter-spacing:.18em;padding:9px 0 5px;
+        border-bottom:1px solid var(--hair);}
+.daysep .r{float:right;color:#33404F;letter-spacing:.06em;}
+
+.note{color:var(--dim);font-size:9.5px;line-height:1.55;}
+.pend .name{color:var(--mid);}
+.blocker{color:#33404F;font-size:9px;letter-spacing:.1em;margin-top:5px;display:block;}
+
+@media (max-width:900px){
+  .grid,.grid.two{grid-template-columns:1fr;}
+  .acts{display:block;} .act + .act{border-left:none;border-top:1px solid var(--line);}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <span class="brand">PITCHFORD&nbsp;OS</span>
+  <span class="stat"><span class="k">TUE 08 SEP 2026</span><span class="v">18:08 EDT</span></span>
+  <span class="stat"><span class="k">AKRON</span><span class="v">82&deg;F CLOUDY</span></span>
+  <span class="spacer"></span>
+  <span class="stat"><span class="k">NEXT DEADLINE</span><span class="v hot">00:22</span></span>
+  <span class="stat"><span class="k">NEEDS YOU</span><span class="v warn">2</span></span>
+  <span class="stat"><span class="k">AGENTS</span><span class="v ok">4/5</span></span>
+</div>
+
+<div class="tabs">
+  <button class="tab sel" onclick="pick(0)">LIVE<span class="n">9</span></button>
+  <button class="tab" onclick="pick(1)">PENDING<span class="n">7</span></button>
+</div>
+
+<div class="viewwrap">
+
+<!-- ==================== LIVE ==================== -->
+<div class="view sel" id="v0">
+<div class="grid">
+
+  <div class="col">
+    <div class="panel">
+      <h2>AGENT WORKFORCE <span class="badge">4 ONLINE</span></h2>
+      <div class="body">
+        <div class="row"><span class="dot on"></span><span class="name">Gmail Sort</span><span class="meta">DAILY 07:00</span></div>
+        <div class="row"><span class="dot on"></span><span class="name">Outlook Work Sort</span><span class="meta">DAILY 07:00</span></div>
+        <div class="row"><span class="dot on"></span><span class="name">Morning Brief</span><span class="meta">WKDY 08:00</span></div>
+        <div class="row"><span class="dot on"></span><span class="name">Law School OS</span><span class="meta">06:40 / 12:40 / 18:40</span></div>
+        <div class="row"><span class="dot build"></span><span class="name">Skip Trace</span><span class="meta">BUILDING</span></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>COURSE LOAD <span class="badge">71 PTS OPEN</span></h2>
+      <div class="body">
+        <div class="row"><span class="name">Lawyering Analysis &amp; Research</span><span class="meta">TUE/THU 18:30 &middot; RM 281</span></div>
+        <div class="row"><span class="name">Lawyering Analysis &amp; Writing</span><span class="meta">ASYNC</span></div>
+        <div class="row"><span class="name">Civil Procedure &mdash; Fed. Juris.</span><span class="meta">ASYNC</span></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>AKRON <span class="badge">82&deg; &middot; 10% RAIN</span></h2>
+      <div class="body">
+        <div class="row"><span class="name">Tonight</span><span class="meta">LOW 58</span></div>
+        <div class="row"><span class="name">Wed</span><span class="meta">87 &middot; 35% RAIN</span></div>
+        <div class="row"><span class="name">Thu</span><span class="meta">78 &middot; 20% RAIN</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="core">
+      <svg class="dial" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <circle cx="60" cy="60" r="52" fill="none" stroke="#16202C" stroke-width="1"/>
+        <circle cx="60" cy="60" r="44" fill="none" stroke="#1B2A36" stroke-width="1"/>
+        <circle cx="60" cy="60" r="52" fill="none" stroke="#45C8DC" stroke-width="1.4"
+                stroke-dasharray="196 131" stroke-linecap="round" opacity=".75" transform="rotate(-90 60 60)"/>
+        <g stroke="#22333F" stroke-width="1">
+          <line x1="60" y1="16" x2="60" y2="24"/><line x1="60" y1="96" x2="60" y2="104"/>
+          <line x1="16" y1="60" x2="24" y2="60"/><line x1="96" y1="60" x2="104" y2="60"/>
+          <line x1="29" y1="29" x2="35" y2="35"/><line x1="85" y1="85" x2="91" y2="91"/>
+          <line x1="91" y1="29" x2="85" y2="35"/><line x1="35" y1="85" x2="29" y2="91"/>
+        </g>
+        <circle cx="60" cy="60" r="26" fill="none" stroke="#2A4A55" stroke-width="1"/>
+        <circle cx="60" cy="60" r="13" fill="#45C8DC" opacity=".16"/>
+        <circle cx="60" cy="60" r="7" fill="#7FE3F2"/>
+      </svg>
+      <p class="hello">Good evening, <b>Preston</b>. Four agents running, feeds clean.</p>
+      <p class="sub">One hard deadline in twenty-two minutes. The rest keeps until tomorrow.</p>
+      <div class="cmd"><span class="car">&gt;</span><span class="ph">Ask, or hand something off&hellip;</span><span class="st">IDLE</span></div>
+    </div>
+
+    <div class="panel">
+      <h2>DAY SHAPE <span class="badge">90 MIN COMMITTED</span></h2>
+      <div class="terrain">
+        <svg viewBox="0 0 640 130" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Flat through the working hours, rising sharply into the evening.">
+          <path d="M0 102 C 46 100, 92 104, 138 101 S 230 98, 276 101 S 368 103, 414 98 C 444 94, 460 90, 474 80 C 490 64, 502 40, 517 29 C 531 20, 545 19, 558 25 C 575 33, 590 57, 605 77 C 617 92, 629 100, 640 103"
+                fill="none" stroke="#45C8DC" stroke-width="1.5" stroke-linecap="round" opacity=".9"/>
+          <circle cx="138" cy="101" r="4" fill="#2A3543"/><circle cx="276" cy="101" r="4" fill="#2A3543"/>
+          <circle cx="474" cy="80" r="6" fill="#D9973C"/><circle cx="517" cy="29" r="8" fill="#45C8DC"/>
+          <circle cx="605" cy="77" r="5.5" fill="#45C8DC"/>
+          <path d="M509 12 q 9 -8 18 0" fill="none" stroke="#D9973C" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="acts">
+        <div class="act"><span class="t">MORNING</span>Nothing scheduled. The day arrived by inbox instead.</div>
+        <div class="act"><span class="t">AFTERNOON</span>Everything landed on the same two threads.</div>
+        <div class="act"><span class="t">EVENING</span>It all compresses into ninety minutes in Room 281.</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>NEEDS ATTENTION <span class="badge hot">2</span></h2>
+      <div class="att">
+        <span class="bar"></span>
+        <div>
+          <p class="ttl">Cases quiz closes when class starts</p>
+          <p>Eleven points, one attempt, and it shuts at 6:30 rather than midnight. No late work in this course and extensions have to be asked for in advance.</p>
+          <span class="when">TODAY 18:30 &middot; LAWX 730</span>
+        </div>
+      </div>
+      <div class="att">
+        <span class="bar med"></span>
+        <div>
+          <p class="ttl">Two problem sets land together tomorrow night</p>
+          <p>Both belong to Class 6, thirty points each. Word rather than PDF, Bluebook citations even where the question does not ask, honor pledge typed out.</p>
+          <span class="when">WED 23:59 &middot; LAWX 730</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="panel">
+      <h2>SCHEDULE <span class="badge warn">NEXT IN 00:22</span></h2>
+      <div class="body">
+        <div class="daysep">TUE 08 SEP<span class="r">TODAY</span></div>
+        <div class="sch"><span class="tm">18:30</span><span class="ev">Cases Part 1 Quiz closes<small>11 pts &middot; one attempt</small></span></div>
+        <div class="sch"><span class="tm">18:30&ndash;20:00</span><span class="ev">Class 6 &mdash; Cases Part 1<small>Room 281, in person</small></span></div>
+        <div class="daysep">WED 09 SEP<span class="r">60 PTS DUE</span></div>
+        <div class="sch"><span class="tm">23:59</span><span class="ev">Case Law Pt 1 Problem Set 1<small>30 pts &middot; Word &middot; Bluebook</small></span></div>
+        <div class="sch"><span class="tm">23:59</span><span class="ev">Case Law Pt 1 Problem Set 2<small>30 pts &middot; Word &middot; Bluebook</small></span></div>
+        <div class="daysep">THU 10 SEP<span class="r">CLASS NIGHT</span></div>
+        <div class="sch"><span class="tm">18:30&ndash;20:00</span><span class="ev">Class 7<small>Room 281 &middot; per course schedule</small></span></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>PERSONAL INBOX <span class="badge mute">0 NEED YOU</span></h2>
+      <div class="body">
+        <p class="note">15 unread across three days, all promotional or account notices. The sort agent has it.</p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>LAST AGENT RUN <span class="badge">18:40</span></h2>
+      <div class="body">
+        <div class="row"><span class="name">Law School OS sweep</span><span class="meta">18:40</span></div>
+        <div class="row"><span class="name">Outlook sort</span><span class="meta">07:00</span></div>
+        <div class="row"><span class="name">Gmail sort</span><span class="meta">07:00</span></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ==================== PENDING ==================== -->
+<div class="view" id="v1">
+<div class="grid two">
+
+  <div class="col">
+    <div class="panel pend">
+      <h2>SECOND BRAIN INDEX <span class="badge mute">BLOCKED</span></h2>
+      <div class="body"><p class="note">Searchable index across notes, PDFs and case materials.
+        <span class="blocker">NEEDS &mdash; ONE DOCUMENT STORE THE AGENTS CAN REACH</span></p></div>
+    </div>
+    <div class="panel pend">
+      <h2>GRADES &amp; OUTLINES <span class="badge mute">BLOCKED</span></h2>
+      <div class="body"><p class="note">Points earned against points available per course, and outline coverage by topic.
+        <span class="blocker">NEEDS &mdash; FIRST GRADED WORK RETURNED</span></p></div>
+    </div>
+    <div class="panel pend">
+      <h2>READING QUEUE <span class="badge mute">BLOCKED</span></h2>
+      <div class="body"><p class="note">What to read before the next class, ranked, drawn from the Brightspace sweep.
+        <span class="blocker">NEEDS &mdash; LAW PLAN OUTPUT WIRED IN</span></p></div>
+    </div>
+    <div class="panel pend">
+      <h2>L2 TRANSITION <span class="badge mute">BLOCKED</span></h2>
+      <div class="body"><p class="note">Part-time to full-time switch: prerequisites, timing, cohort contacts.
+        <span class="blocker">NEEDS &mdash; A DECISION DATE FROM THE SCHOOL</span></p></div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="panel pend">
+      <h2>SKIP TRACE QUEUE <span class="badge mute">BLOCKED</span></h2>
+      <div class="body"><p class="note">Files waiting, in progress and cleared, with cost per file.
+        <span class="blocker">NEEDS &mdash; BATCH RUNS, AND A CALL ON FIRM DATA</span></p></div>
+    </div>
+    <div class="panel pend">
+      <h2>STUDY TIME <span class="badge mute">BLOCKED</span></h2>
+      <div class="body"><p class="note">Hours actually spent per course against what the credit load implies.
+        <span class="blocker">NEEDS &mdash; SOMETHING RECORDING THE HOURS</span></p></div>
+    </div>
+    <div class="panel pend">
+      <h2>BAR COUNTDOWN <span class="badge mute">BLOCKED</span></h2>
+      <div class="body"><p class="note">Days to the Ohio bar, once the graduation date is fixed rather than estimated.
+        <span class="blocker">NEEDS &mdash; CONFIRMED GRADUATION TERM</span></p></div>
+    </div>
+    <div class="panel pend">
+      <h2>WORK INBOX <span class="badge mute">HOME ONLY</span></h2>
+      <div class="body"><p class="note">DPY mail was pulled off the live view on purpose. Client matters do not belong on a page that syncs anywhere.
+        <span class="blocker">NEEDS &mdash; LOCAL-ONLY RENDER, OR A FIRM POLICY CALL</span></p></div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+</div>
+
+<script>
+function pick(i){
+  document.querySelectorAll('.tab').forEach(function(t,n){t.classList.toggle('sel',n===i);});
+  document.querySelectorAll('.view').forEach(function(v,n){v.classList.toggle('sel',n===i);});
+}
+</script>
+</body>
+</html>

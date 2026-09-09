@@ -12,21 +12,22 @@
   --panel:#FFFFFF;
   --ink:#16274A;         /* navy */
   --ink-soft:#46578079;
-  --body:#3C4A69;
-  --muted:#7C87A0;
-  --rule:#E2DBCB;
+  --body:#1E2E52;
+  --muted:#515D79;
+  --rule:#D8CFB9;
   --rule-soft:#EFEADF;
-  --gold:#A8842C;
-  --gold-lit:#C9A227;
+  --gold:#8A6A1E;
+  --gold-lit:#A8842C;
   --gold-pale:#F0E6CC;
   --rust:#96341F;        /* Roman red, for what is urgent */
-  --serif: Optima, "Palatino Linotype", Palatino, "Iowan Old Style", Georgia, serif;
+  --serif: Optima, "Palatino Linotype", Palatino, Georgia, serif;
+  --text-face: Charter, "Iowan Old Style", Georgia, "Times New Roman", serif;
 }
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;background:var(--bg);}
 body{
-  font-family:var(--serif); color:var(--body);
-  font-size:13.5px; line-height:1.62;
+  font-family:var(--text-face); color:var(--body);
+  font-size:16px; line-height:1.6; font-weight:500;
   font-variant-numeric:tabular-nums;
   -webkit-font-smoothing:antialiased; padding:18px;
 }
@@ -34,7 +35,7 @@ body{
 /* ---------- meander rule ---------- */
 .meander{
   height:14px; margin:0 0 14px;
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='14' viewBox='0 0 40 14'%3E%3Cpath d='M0 12 H4 V2 H20 V10 H10 V6 H16 M20 2 H36 V12 H40' fill='none' stroke='%23A8842C' stroke-width='1.3'/%3E%3C/svg%3E");
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='14' viewBox='0 0 40 14'%3E%3Cpath d='M0 12 H4 V2 H20 V10 H10 V6 H16 M20 2 H36 V12 H40' fill='none' stroke='%23B8912F' stroke-width='1.5'/%3E%3C/svg%3E");
   background-repeat:repeat-x; background-position:left center;
   opacity:.55;
 }
@@ -45,26 +46,26 @@ body{
   border-bottom:2px solid var(--ink); padding:0 2px 10px; margin-bottom:4px;
 }
 .brand{
-  font-size:19px; letter-spacing:.30em; color:var(--ink);
+  font-family:var(--serif); font-size:23px; letter-spacing:.18em; color:var(--ink);
   text-transform:uppercase; white-space:nowrap; font-weight:600;
 }
 .topbar .spacer{flex:1;}
 .stat{display:flex;align-items:baseline;gap:8px;white-space:nowrap;}
 .stat .k{
-  color:var(--muted); font-size:10px; letter-spacing:.18em; text-transform:uppercase;
+  color:var(--muted); font-size:12px; letter-spacing:.09em; text-transform:uppercase; font-weight:600;
 }
-.stat .v{font-size:14px;color:var(--ink);}
+.stat .v{font-size:18px;color:var(--ink);font-weight:700;}
 .v.ok{color:var(--gold);} .v.warn{color:var(--gold-lit);} .v.hot{color:var(--rust);}
 
 /* ---------- tabs ---------- */
 .tabs{display:flex;margin-top:14px;}
 .tab{
-  padding:7px 22px; font-family:var(--serif); font-size:11px; letter-spacing:.22em;
+  padding:9px 24px; font-family:var(--serif); font-size:14px; letter-spacing:.12em; font-weight:600;
   text-transform:uppercase; color:var(--muted); background:none; cursor:pointer;
   border:none; border-bottom:2px solid var(--rule);
 }
 .tab.sel{color:var(--ink);border-bottom-color:var(--gold);}
-.tab .n{color:var(--gold);margin-left:9px;font-size:10px;}
+.tab .n{color:var(--gold);margin-left:10px;font-size:13px;}
 .tabs::after{content:"";flex:1;border-bottom:2px solid var(--rule);}
 .viewwrap{padding:16px 0 0;}
 .view{display:none;} .view.sel{display:block;}
@@ -77,11 +78,11 @@ body{
 .panel{background:var(--panel);border:1px solid var(--rule);}
 .panel > h2{
   margin:0;padding:10px 15px 8px;border-bottom:1px solid var(--gold);
-  font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink);
-  font-weight:600;display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+  font-family:var(--serif);font-size:14px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink);
+  font-weight:700;display:flex;justify-content:space-between;align-items:baseline;gap:12px;
 }
 .panel > h2 .badge{
-  color:var(--gold);letter-spacing:.1em;font-size:11.5px;font-weight:400;
+  color:var(--gold);letter-spacing:.04em;font-size:14px;font-weight:700;
   text-transform:none;
 }
 .badge.warn{color:var(--gold-lit);} .badge.hot{color:var(--rust);}
@@ -95,18 +96,18 @@ body{
 .dot.on{background:var(--gold);}
 .dot.build{background:var(--gold-lit);box-shadow:0 0 0 2px var(--gold-pale);}
 .dot.off{background:var(--rule);}
-.row .name{flex:1;font-size:13.5px;color:var(--ink);}
-.row .meta{color:var(--muted);font-size:11px;letter-spacing:.06em;white-space:nowrap;}
+.row .name{flex:1;font-size:16px;color:var(--ink);font-weight:600;}
+.row .meta{color:var(--muted);font-size:13.5px;letter-spacing:.02em;white-space:nowrap;font-weight:600;}
 
 /* ---------- core ---------- */
 .core{
   background:var(--panel);border:1px solid var(--rule);
-  padding:26px 24px 20px;text-align:center;
+  padding:22px 22px 18px;text-align:center;
 }
-.dial{width:132px;height:132px;margin:0 auto 16px;display:block;}
-.hello{color:var(--ink);margin:0 0 4px;font-size:16px;}
+.dial{width:168px;height:168px;margin:0 auto 14px;display:block;}
+.hello{color:var(--ink);margin:0 0 5px;font-size:21px;font-weight:600;}
 .hello b{font-weight:600;}
-.sub{color:var(--muted);font-size:12.5px;margin:0 0 18px;font-style:italic;}
+.sub{color:var(--body);font-size:15.5px;margin:0 0 18px;font-style:italic;}
 
 .cmd{
   display:flex;align-items:center;gap:10px;border:1px solid var(--rule);
@@ -114,10 +115,10 @@ body{
 }
 .cmd:focus-within{border-color:var(--gold);}
 .cmd .car{color:var(--gold);font-size:14px;}
-.cmd .st{color:var(--muted);font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;}
+.cmd .st{color:var(--muted);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:600;}
 input.ph{
   background:none;border:none;outline:none;font-family:var(--serif);
-  color:var(--ink);width:100%;padding:0;flex:1;font-size:13.5px;
+  color:var(--ink);width:100%;padding:0;flex:1;font-size:16px;font-weight:500;
 }
 input.ph::placeholder{color:var(--muted);font-style:italic;}
 input.ph:disabled{cursor:not-allowed;}
@@ -125,18 +126,18 @@ input.ph:disabled{cursor:not-allowed;}
 .thread{margin-top:14px;text-align:left;max-height:360px;overflow-y:auto;}
 .turn{border-top:1px solid var(--rule-soft);padding:12px 2px 0;margin-top:12px;}
 .turn:first-child{border-top:none;margin-top:0;}
-.turn .q{color:var(--gold);font-size:12px;letter-spacing:.04em;margin:0 0 7px;font-style:italic;}
-.turn .a{color:var(--body);font-size:13px;line-height:1.68;margin:0;white-space:pre-wrap;}
+.turn .q{color:var(--gold);font-size:15px;margin:0 0 8px;font-style:italic;font-weight:600;}
+.turn .a{color:var(--body);font-size:15.5px;line-height:1.65;margin:0;white-space:pre-wrap;}
 .turn .a.err{color:var(--rust);}
 
 /* ---------- terrain ---------- */
 .terrain{padding:16px 15px 8px;} .terrain svg{display:block;width:100%;height:auto;}
 .acts{display:flex;border-top:1px solid var(--rule-soft);}
-.act{flex:1;padding:11px 15px;color:var(--body);font-size:12.5px;line-height:1.6;}
+.act{flex:1;padding:12px 15px;color:var(--body);font-size:15px;line-height:1.55;}
 .act + .act{border-left:1px solid var(--rule-soft);}
 .act .t{
-  display:block;color:var(--gold);font-size:9.5px;letter-spacing:.2em;
-  margin-bottom:5px;text-transform:uppercase;
+  display:block;color:var(--gold);font-size:12px;letter-spacing:.1em;font-weight:700;
+  margin-bottom:6px;text-transform:uppercase;
 }
 
 /* ---------- attention, numbered in Roman ---------- */
@@ -147,39 +148,39 @@ input.ph:disabled{cursor:not-allowed;}
 .att .bar.med{background:var(--gold-lit);} .att .bar.low{background:var(--rule);}
 .att > div{flex:1;}
 .att .ttl{
-  margin:0 0 4px;font-size:14px;color:var(--ink);
+  margin:0 0 6px;font-size:18px;color:var(--ink);font-weight:700;line-height:1.35;
   counter-increment:att;
 }
 .att .ttl::before{
   content:counter(att, upper-roman) ".";
-  color:var(--gold);margin-right:9px;font-size:12px;letter-spacing:.06em;
+  color:var(--gold);margin-right:10px;font-size:15px;
 }
-.att p{margin:0;color:var(--body);font-size:12.5px;line-height:1.62;}
+.att p{margin:0;color:var(--body);font-size:15px;line-height:1.6;}
 .att .when{
-  color:var(--muted);font-size:10px;letter-spacing:.14em;margin-top:6px;
+  color:var(--muted);font-size:12.5px;letter-spacing:.06em;margin-top:8px;font-weight:700;
   display:block;text-transform:uppercase;
 }
 
 /* ---------- schedule ---------- */
 .sch{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid var(--rule-soft);}
 .sch:last-child{border-bottom:none;}
-.sch .tm{color:var(--gold);font-size:11.5px;width:68px;flex:0 0 68px;letter-spacing:.03em;}
+.sch .tm{color:var(--gold);font-size:14.5px;width:82px;flex:0 0 82px;font-weight:700;}
 .sch .tm.past{color:var(--rule);}
-.sch .ev{flex:1;font-size:13px;line-height:1.5;color:var(--ink);}
-.sch .ev small{display:block;color:var(--muted);font-size:11px;margin-top:3px;}
+.sch .ev{flex:1;font-size:16px;line-height:1.45;color:var(--ink);font-weight:600;}
+.sch .ev small{display:block;color:var(--muted);font-size:13.5px;margin-top:4px;font-weight:500;}
 .daysep{
-  color:var(--ink);font-size:10px;letter-spacing:.2em;padding:12px 0 6px;
+  font-family:var(--serif);color:var(--ink);font-size:13px;letter-spacing:.1em;padding:14px 0 7px;font-weight:700;
   border-bottom:1px solid var(--gold);text-transform:uppercase;
 }
-.daysep .r{float:right;color:var(--gold);letter-spacing:.08em;}
+.daysep .r{float:right;color:var(--gold);letter-spacing:.04em;}
 
-.note{color:var(--body);font-size:12.5px;line-height:1.62;}
+.note{color:var(--body);font-size:15px;line-height:1.6;}
 .blocker{
-  color:var(--gold);font-size:10px;letter-spacing:.14em;margin-top:7px;
+  color:var(--gold);font-size:12.5px;letter-spacing:.05em;margin-top:9px;font-weight:700;
   display:block;text-transform:uppercase;
 }
 .foot{
-  color:var(--muted);font-size:10px;letter-spacing:.18em;padding:20px 2px 6px;
+  color:var(--muted);font-size:12.5px;letter-spacing:.08em;padding:20px 2px 6px;font-weight:600;
   text-align:right;text-transform:uppercase;
 }
 
@@ -188,7 +189,8 @@ input.ph:disabled{cursor:not-allowed;}
   .grid,.grid.two{grid-template-columns:1fr;}
   .acts{display:block;} .act + .act{border-left:none;border-top:1px solid var(--rule-soft);}
   .topbar{gap:14px;}
-  .brand{font-size:16px;letter-spacing:.22em;}
+  .brand{font-size:19px;letter-spacing:.12em;}
+  body{font-size:16.5px;}
 }
 </style>
 </head>
@@ -196,10 +198,10 @@ input.ph:disabled{cursor:not-allowed;}
 
 <div class="topbar">
   <span class="brand">Pitchford&nbsp;&middot;&nbsp;OS</span>
-  <span class="stat"><span class="k">WED 09 SEP 2026</span><span class="v">09:34</span></span>
+  <span class="stat"><span class="k">WED 09 SEP 2026</span><span class="v">09:43</span></span>
   <span class="stat"><span class="k">AKRON</span><span class="v">76°F CLEAR</span></span>
   <span class="spacer"></span>
-  <span class="stat"><span class="k">Next</span><span class="v warn">14H 24M</span></span>
+  <span class="stat"><span class="k">Next</span><span class="v warn">14H 15M</span></span>
   <span class="stat"><span class="k">Needs you</span><span class="v warn">1</span></span>
   <span class="stat"><span class="k">Agents</span><span class="v ok">4/5</span></span>
 </div>
@@ -237,10 +239,10 @@ input.ph:disabled{cursor:not-allowed;}
     </div>
 
     <div class="panel">
-      <h2>AKRON <span class="badge">76° · 59% RAIN</span></h2>
+      <h2>AKRON <span class="badge">76° · 49% RAIN</span></h2>
       <div class="body">
         <div class="row"><span class="name">Tonight</span><span class="meta">LOW 68</span></div>
-        <div class="row"><span class="name">Thu</span><span class="meta">78 · 17% RAIN</span></div>
+        <div class="row"><span class="name">Thu</span><span class="meta">78 · 16% RAIN</span></div>
         <div class="row"><span class="name">Fri</span><span class="meta">81 · 1% RAIN</span></div>
       </div>
     </div>
@@ -250,7 +252,7 @@ input.ph:disabled{cursor:not-allowed;}
     <div class="core">
       <svg class="dial" viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <!-- laurel wreath -->
-        <g fill="#A8842C" opacity=".85">
+        <g fill="#B8912F" opacity=".9">
           <ellipse cx="58.1" cy="125.8" rx="6.0" ry="2.4" transform="rotate(44 58.1 125.8)"/>
           <ellipse cx="46.3" cy="121.8" rx="5.8" ry="2.3" transform="rotate(57 46.3 121.8)"/>
           <ellipse cx="35.6" cy="115.5" rx="5.6" ry="2.2" transform="rotate(69 35.6 115.5)"/>
@@ -278,7 +280,7 @@ input.ph:disabled{cursor:not-allowed;}
         </g>
         <circle cx="70" cy="70" r="47" fill="none" stroke="#E2DBCB" stroke-width="1"/>
         <circle cx="70" cy="70" r="47" fill="none" stroke="#16274A" stroke-width="2.2"
-                stroke-dasharray="130 196" stroke-linecap="butt" transform="rotate(-90 70 70)"/>
+                stroke-dasharray="132 194" stroke-linecap="butt" transform="rotate(-90 70 70)"/>
         <circle cx="70" cy="70" r="33" fill="none" stroke="#EFEADF" stroke-width="1"/>
         <g stroke="#C9A227" stroke-width="1.2">
           <line x1="70" y1="18" x2="70" y2="25"/><line x1="70" y1="115" x2="70" y2="122"/>
@@ -305,7 +307,7 @@ input.ph:disabled{cursor:not-allowed;}
           <path d="M0 102.0 L8 102.0 L16 102.0 L24 102.0 L32 102.0 L40 102.0 L48 102.0 L56 102.0 L64 102.0 L72 102.0 L80 102.0 L88 102.0 L96 102.0 L104 102.0 L112 102.0 L120 102.0 L128 102.0 L136 102.0 L144 102.0 L152 102.0 L160 102.0 L168 102.0 L176 102.0 L184 102.0 L192 102.0 L200 102.0 L208 101.9 L216 101.9 L224 101.9 L232 101.9 L240 101.8 L248 101.7 L256 101.7 L264 101.5 L272 101.4 L280 101.2 L288 101.0 L296 100.7 L304 100.3 L312 99.8 L320 99.2 L328 98.5 L336 97.7 L344 96.6 L352 95.5 L360 94.1 L368 92.4 L376 90.6 L384 88.5 L392 86.1 L400 83.4 L408 80.5 L416 77.3 L424 73.9 L432 70.3 L440 66.4 L448 62.4 L456 58.4 L464 54.3 L472 50.2 L480 46.2 L488 42.4 L496 38.8 L504 35.5 L512 32.7 L520 30.3 L528 28.3 L536 27.0 L544 26.2 L552 26.0 L560 26.4 L568 27.5 L576 29.0 L584 31.2 L592 33.8 L600 36.8 L608 40.2 L616 43.9 L624 47.8 L632 51.8 L640 55.9" fill="none" stroke="#16274A" stroke-width="1.8" stroke-linecap="round" opacity=".9"/>
           <circle cx="639" cy="55.6" r="5.5" fill="#A8842C"/>
           <circle cx="639" cy="55.6" r="5.5" fill="#A8842C"/>
-          <line x1="127" y1="14" x2="127" y2="114" stroke="#96341F" stroke-width="1" stroke-dasharray="2 4" opacity=".7"/>
+          <line x1="132" y1="14" x2="132" y2="114" stroke="#96341F" stroke-width="1" stroke-dasharray="2 4" opacity=".7"/>
         </svg>
       </div>
       <div class="acts">
@@ -330,7 +332,7 @@ input.ph:disabled{cursor:not-allowed;}
 
   <div class="col">
     <div class="panel">
-      <h2>Schedule <span class="badge warn">14H 24M</span></h2>
+      <h2>Schedule <span class="badge warn">14H 15M</span></h2>
       <div class="body">
         <div class="daysep">WED 09 SEP<span class="r">TODAY</span></div>
         <div class="sch"><span class="tm">23:59</span><span class="ev">Case Law Pt 1 Problem Set 1<small>30 pts · Word · Bluebook</small></span></div>
@@ -410,7 +412,7 @@ input.ph:disabled{cursor:not-allowed;}
 </div>
 
 <div class="meander" style="margin-top:22px"></div>
-<p class="foot">Built 09 SEP 2026 09:34</p>
+<p class="foot">Built 09 SEP 2026 09:43</p>
 </div>
 
 <script>

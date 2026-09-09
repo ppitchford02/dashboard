@@ -1,32 +1,124 @@
 /**
- * PITCHFORD OS — ask endpoint
+ * PITCHFORD OS — ask endpoint, v2
  *
- * Sits between the public dashboard and the Anthropic API so the API key
- * never touches the browser.
+ * Sits between the public dashboard and the Anthropic API so no key ever
+ * touches the browser. Answers from the dashboard data, can search the web,
+ * and can edit data.json in the repo when told to, which triggers a rebuild.
  *
- * Secrets (set in the Cloudflare dashboard, never in this file):
- *   ANTHROPIC_API_KEY   your Anthropic API key
- *   DASH_PASSPHRASE     the phrase the page asks you for
+ * Secrets (Settings → Variables and secrets, type Secret):
+ *   ANTHROPIC_API_KEY   Anthropic key
+ *   DASH_PASSPHRASE     the phrase the page asks for
+ *   GITHUB_TOKEN        fine-grained token, Contents: read+write, this repo only
+ *
+ * Plain variables:
+ *   ALLOWED_ORIGIN      https://ppitchford02.github.io   (no trailing slash)
+ *   GITHUB_REPO         ppitchford02/dashboard
+ *   GITHUB_BRANCH       main
  *
  * Bindings:
- *   LIMITS              a KV namespace, used for the daily spend cap
- *
- * Vars (safe to keep here):
- *   ALLOWED_ORIGIN      the dashboard URL
- *   DATA_URL            raw data.json, so answers know today's page
+ *   LIMITS              KV namespace, for the spend caps
  */
 
-const MODEL = "claude-haiku-4-5-20251001"; // cheap. swap to claude-sonnet-5 for harder questions
-const MAX_TOKENS = 900;
-const DAILY_CAP = 50;      // messages per day, total
-const BURST_CAP = 8;       // messages per IP per 10 minutes
-const MAX_QUESTION = 1200; // characters
+const MODEL = "claude-sonnet-5";
+const MAX_TOKENS = 1600;
+const DAILY_CAP = 60;       // messages per day, total
+const BURST_CAP = 10;       // per IP per 10 minutes
+const MAX_QUESTION = 2000;
+const MAX_TOOL_ROUNDS = 5;
+const WEB_SEARCH_MAX_USES = 3;
+
+// --------------------------------------------------------------- tools
+
+const TOOLS = [
+  {
+    type: "web_search_20250305",
+    name: "web_search",
+    max_uses: WEB_SEARCH_MAX_USES,
+  },
+  {
+    name: "add_deadline",
+    description:
+      "Add a deadline or class session to the dashboard schedule. Use when Preston " +
+      "asks to add, schedule, or remind him about something with a date and time.",
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Short title, e.g. 'Civ Pro memo'" },
+        due: {
+          type: "string",
+          description: "Local date-time as YYYY-MM-DDTHH:MM, e.g. 2026-09-12T23:59",
+        },
+        end: { type: "string", description: "Optional end time, same format, for classes" },
+        points: { type: "integer", description: "Points, if graded. Omit if unknown." },
+        course: { type: "string", description: "Course code, e.g. LAWX 730" },
+        note: { type: "string", description: "One short line shown under the title" },
+        kind: { type: "string", enum: ["deadline", "class"] },
+      },
+      required: ["title", "due"],
+    },
+  },
+  {
+    name: "remove_deadline",
+    description:
+      "Remove a deadline from the schedule by matching its title. Use when something " +
+      "is done, cancelled, or was added by mistake.",
+    input_schema: {
+      type: "object",
+      properties: {
+        title_contains: {
+          type: "string",
+          description: "Case-insensitive fragment of the title to remove",
+        },
+      },
+      required: ["title_contains"],
+    },
+  },
+  {
+    name: "add_attention",
+    description:
+      "Add an item to the Needs Attention panel. For things that need Preston's action " +
+      "but aren't a single dated deadline.",
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        body: { type: "string", description: "One or two sentences" },
+        when: { type: "string", description: "Short tag like 'WED 23:59 · LAWX 730'" },
+        level: { type: "string", enum: ["high", "med", "low"] },
+      },
+      required: ["title", "body"],
+    },
+  },
+  {
+    name: "remove_attention",
+    description: "Remove a Needs Attention item by title fragment.",
+    input_schema: {
+      type: "object",
+      properties: { title_contains: { type: "string" } },
+      required: ["title_contains"],
+    },
+  },
+  {
+    name: "set_agent_status",
+    description: "Update an agent's status in the Workforce panel.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name_contains: { type: "string" },
+        status: { type: "string", enum: ["on", "build", "off"] },
+        schedule: { type: "string", description: "Optional new schedule text" },
+      },
+      required: ["name_contains", "status"],
+    },
+  },
+];
+
+// --------------------------------------------------------------- entry
 
 export default {
   async fetch(request, env) {
     const origin = env.ALLOWED_ORIGIN || "*";
 
-    // ---- CORS preflight ----------------------------------------------
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: cors(origin) });
     }
@@ -34,7 +126,6 @@ export default {
       return json({ error: "POST only" }, 405, origin);
     }
 
-    // ---- parse -------------------------------------------------------
     let body;
     try {
       body = await request.json();
@@ -44,89 +135,39 @@ export default {
 
     const question = String(body.question || "").trim();
     const pass = String(body.pass || "");
-    const history = Array.isArray(body.history) ? body.history.slice(-8) : [];
+    const history = Array.isArray(body.history) ? body.history.slice(-10) : [];
 
     if (!question) return json({ error: "empty question" }, 400, origin);
-    if (question.length > MAX_QUESTION) {
-      return json({ error: "question too long" }, 400, origin);
-    }
+    if (question.length > MAX_QUESTION) return json({ error: "too long" }, 400, origin);
 
-    // ---- gate --------------------------------------------------------
     if (!env.DASH_PASSPHRASE || pass !== env.DASH_PASSPHRASE) {
       return json({ error: "unauthorized" }, 401, origin);
     }
 
-    // ---- caps --------------------------------------------------------
-    const ip = request.headers.get("CF-Connecting-IP") || "unknown";
-    const today = new Date().toISOString().slice(0, 10);
-    const burstKey = `burst:${ip}:${Math.floor(Date.now() / 600000)}`;
-    const dayKey = `day:${today}`;
+    // ---- spend caps ----------------------------------------------------
+    const capErr = await enforceCaps(request, env);
+    if (capErr) return json({ error: capErr.msg }, capErr.status, origin);
 
+    // ---- current dashboard data ---------------------------------------
+    const gh = new Repo(env);
+    let dashFile = null;
     try {
-      const [burstRaw, dayRaw] = await Promise.all([
-        env.LIMITS.get(burstKey),
-        env.LIMITS.get(dayKey),
-      ]);
-      const burst = Number(burstRaw || 0);
-      const day = Number(dayRaw || 0);
-
-      if (burst >= BURST_CAP) {
-        return json({ error: "slow down, try again in a few minutes" }, 429, origin);
-      }
-      if (day >= DAILY_CAP) {
-        return json({ error: `daily cap of ${DAILY_CAP} reached` }, 429, origin);
-      }
-
-      await Promise.all([
-        env.LIMITS.put(burstKey, String(burst + 1), { expirationTtl: 900 }),
-        env.LIMITS.put(dayKey, String(day + 1), { expirationTtl: 172800 }),
-      ]);
+      dashFile = await gh.read("data.json");
     } catch (e) {
-      // never fail open on the money guard
-      return json({ error: "rate limiter unavailable" }, 503, origin);
+      console.log("data.json read failed", String(e));
     }
+    const dash = dashFile ? dashFile.data : null;
+    const tz = (dash && dash.timezone) || "America/New_York";
 
-    // ---- context -----------------------------------------------------
-    let dash = null;
-    if (env.DATA_URL) {
-      try {
-        const r = await fetch(env.DATA_URL, { cf: { cacheTtl: 120 } });
-        if (r.ok) dash = await r.json();
-      } catch {
-        /* answer without it */
-      }
-    }
-
-    const now = new Date().toLocaleString("en-US", {
-      timeZone: (dash && dash.timezone) || "America/New_York",
-      dateStyle: "full",
-      timeStyle: "short",
+    const now = new Date();
+    const nowLocal = now.toLocaleString("en-US", {
+      timeZone: tz, dateStyle: "full", timeStyle: "short",
     });
+    const todayIso = now.toLocaleDateString("en-CA", { timeZone: tz });
 
-    const system = [
-      "You are the assistant built into Preston's personal dashboard, PITCHFORD OS.",
-      `The current date and time is ${now} (America/New_York).`,
-      "",
-      "Answer from the dashboard data below when the question is about his day,",
-      "deadlines, courses, agents, or schedule. Do the arithmetic yourself —",
-      "days remaining, points open, what is next — rather than telling him to",
-      "look at the page he is already looking at.",
-      "",
-      "If the data does not cover the question, say so plainly and answer from",
-      "general knowledge instead. Never invent a deadline, a grade, a time, or a",
-      "point total that is not in the data.",
-      "",
-      "He is a part-time law student at Akron and a law clerk. Keep answers short",
-      "and direct, plain paragraphs, no bullet points, no bold, no headers. Do not",
-      "open with pleasantries.",
-      "",
-      "Client and firm matters are deliberately not on this dashboard. If asked",
-      "about work files, say they are kept off this page on purpose.",
-      "",
-      "DASHBOARD DATA:",
-      dash ? JSON.stringify(dash, null, 1) : "(unavailable this request)",
-    ].join("\n");
+    const system = buildSystem(nowLocal, todayIso, tz, dash);
 
+    // ---- conversation -------------------------------------------------
     const messages = [];
     for (const m of history) {
       if (m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string") {
@@ -135,49 +176,280 @@ export default {
     }
     messages.push({ role: "user", content: question });
 
-    // ---- call --------------------------------------------------------
-    let out;
-    try {
-      const r = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-api-key": env.ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          max_tokens: MAX_TOKENS,
-          system,
-          messages,
-        }),
-      });
+    // ---- tool loop ----------------------------------------------------
+    let changed = false;
+    let finalText = "";
+    let usage = null;
+    let useWebSearch = env.DISABLE_WEB_SEARCH !== "1";
 
-      if (!r.ok) {
-        const detail = await r.text();
-        console.log("anthropic error", r.status, detail.slice(0, 300));
-        return json({ error: `upstream error ${r.status}` }, 502, origin);
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      const tools = useWebSearch ? TOOLS : TOOLS.filter((t) => t.name !== "web_search");
+
+      let resp = await callModel(env, { system, messages, tools });
+
+      // If web search is the problem (unsupported / disabled), retry once without it
+      if (!resp.ok && resp.status === 400 && useWebSearch) {
+        console.log("retrying without web search", resp.detail.slice(0, 200));
+        useWebSearch = false;
+        resp = await callModel(env, {
+          system, messages, tools: TOOLS.filter((t) => t.name !== "web_search"),
+        });
       }
-      out = await r.json();
-    } catch (e) {
-      return json({ error: "could not reach the model" }, 502, origin);
+      if (!resp.ok) {
+        console.log("anthropic error", resp.status, resp.detail.slice(0, 300));
+        return json({ error: `model error ${resp.status}` }, 502, origin);
+      }
+
+      const out = resp.data;
+      usage = out.usage || usage;
+
+      const textBlocks = (out.content || []).filter((b) => b.type === "text");
+      const toolCalls = (out.content || []).filter((b) => b.type === "tool_use");
+
+      if (out.stop_reason !== "tool_use" || toolCalls.length === 0) {
+        finalText = textBlocks.map((b) => b.text).join("\n").trim();
+        break;
+      }
+
+      // execute our own tools; web_search is handled server-side by the API
+      messages.push({ role: "assistant", content: out.content });
+      const results = [];
+      for (const call of toolCalls) {
+        let result;
+        try {
+          result = await runTool(call.name, call.input, gh);
+          if (result.changed) changed = true;
+        } catch (e) {
+          result = { ok: false, error: String(e).slice(0, 300) };
+        }
+        results.push({
+          type: "tool_result",
+          tool_use_id: call.id,
+          content: JSON.stringify(result),
+        });
+      }
+      messages.push({ role: "user", content: results });
     }
 
-    const text = (out.content || [])
-      .filter((b) => b.type === "text")
-      .map((b) => b.text)
-      .join("\n")
-      .trim();
+    if (!finalText) finalText = changed ? "Done." : "(no answer)";
 
-    return json(
-      { answer: text || "(empty response)", usage: out.usage || null },
-      200,
-      origin
-    );
+    return json({ answer: finalText, changed, usage }, 200, origin);
   },
 };
 
-// ---------------------------------------------------------------- utils
+// --------------------------------------------------------------- system
+
+function buildSystem(nowLocal, todayIso, tz, dash) {
+  return [
+    "You are the assistant built into PITCHFORD OS, Preston's personal dashboard.",
+    `Right now it is ${nowLocal} (${tz}). Today's date in ISO form is ${todayIso}.`,
+    "",
+    "Preston is a first-year part-time law student at the University of Akron and a",
+    "law clerk at his father's firm. He is direct and wants direct answers.",
+    "",
+    "WHAT YOU CAN SEE: the dashboard data below (deadlines, courses, agents,",
+    "attention items). Answer from it when the question is about his day, school,",
+    "schedule, or agents. Do the arithmetic yourself: days remaining, points open,",
+    "what is next. Never invent a deadline, grade, time, or point total.",
+    "",
+    "WHAT YOU CAN DO: search the web for anything outside the data (news, law,",
+    "weather elsewhere, how something works). And edit the dashboard with the tools:",
+    "add or remove deadlines, add or remove attention items, update agent status.",
+    "When he tells you to add, schedule, remove, clear, or mark something, DO IT",
+    "with a tool rather than describing how he could. Convert natural dates to",
+    "YYYY-MM-DDTHH:MM using today's date; 'Friday' means the coming Friday; a",
+    "deadline with no time given is 23:59; a class with no time is 18:30 to 20:00.",
+    "After a tool succeeds, confirm in one short sentence what changed and note",
+    "the page will update within a couple of minutes.",
+    "",
+    "If asked to remove something and several items match, ask which one rather",
+    "than guessing. If a tool fails, say so plainly.",
+    "",
+    "STYLE: short, plain paragraphs. No bullet points, no bold, no headers, no",
+    "pleasantries, no 'great question'. If you don't know, say so.",
+    "",
+    "Client and firm matters are deliberately kept off this dashboard. If asked",
+    "about work files, say they are kept off this page on purpose.",
+    "",
+    "DASHBOARD DATA:",
+    dash ? JSON.stringify(dash, null, 1) : "(could not load data.json this request)",
+  ].join("\n");
+}
+
+// --------------------------------------------------------------- model
+
+async function callModel(env, { system, messages, tools }) {
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({ model: MODEL, max_tokens: MAX_TOKENS, system, messages, tools }),
+  });
+  if (!r.ok) return { ok: false, status: r.status, detail: await r.text() };
+  return { ok: true, data: await r.json() };
+}
+
+// --------------------------------------------------------------- tools impl
+
+async function runTool(name, input, gh) {
+  const mutate = async (fn) => {
+    const file = await gh.read("data.json");
+    const d = file.data;
+    const msg = fn(d);
+    if (!msg) return { ok: false, error: "nothing matched" };
+    await gh.write("data.json", d, file.sha, msg);
+    return { ok: true, changed: true, message: msg };
+  };
+
+  switch (name) {
+    case "add_deadline":
+      return mutate((d) => {
+        d.deadlines = d.deadlines || [];
+        const item = {
+          title: input.title,
+          due: input.due,
+          kind: input.kind || "deadline",
+        };
+        if (input.end) item.end = input.end;
+        if (Number.isInteger(input.points)) item.points = input.points;
+        if (input.course) item.course = input.course;
+        item.note = input.note || [
+          Number.isInteger(input.points) ? `${input.points} pts` : null,
+          input.course || null,
+        ].filter(Boolean).join(" · ");
+        d.deadlines.push(item);
+        d.deadlines.sort((a, b) => (a.due < b.due ? -1 : 1));
+        return `Add deadline: ${input.title} (${input.due})`;
+      });
+
+    case "remove_deadline":
+      return mutate((d) => {
+        const q = input.title_contains.toLowerCase();
+        const before = (d.deadlines || []).length;
+        d.deadlines = (d.deadlines || []).filter(
+          (x) => !String(x.title).toLowerCase().includes(q)
+        );
+        const n = before - d.deadlines.length;
+        return n ? `Remove ${n} deadline(s) matching "${input.title_contains}"` : null;
+      });
+
+    case "add_attention":
+      return mutate((d) => {
+        d.attention = d.attention || [];
+        d.attention.unshift({
+          title: input.title,
+          body: input.body,
+          when: input.when || "",
+          level: input.level || "med",
+        });
+        return `Add attention: ${input.title}`;
+      });
+
+    case "remove_attention":
+      return mutate((d) => {
+        const q = input.title_contains.toLowerCase();
+        const before = (d.attention || []).length;
+        d.attention = (d.attention || []).filter(
+          (x) => !String(x.title).toLowerCase().includes(q)
+        );
+        const n = before - d.attention.length;
+        return n ? `Remove ${n} attention item(s) matching "${input.title_contains}"` : null;
+      });
+
+    case "set_agent_status":
+      return mutate((d) => {
+        const q = input.name_contains.toLowerCase();
+        let hit = 0;
+        for (const a of d.agents || []) {
+          if (String(a.name).toLowerCase().includes(q)) {
+            a.status = input.status;
+            if (input.schedule) a.schedule = input.schedule;
+            hit++;
+          }
+        }
+        return hit ? `Set ${hit} agent(s) matching "${input.name_contains}" to ${input.status}` : null;
+      });
+
+    default:
+      return { ok: false, error: `unknown tool ${name}` };
+  }
+}
+
+// --------------------------------------------------------------- github
+
+class Repo {
+  constructor(env) {
+    this.token = env.GITHUB_TOKEN;
+    this.repo = env.GITHUB_REPO || "ppitchford02/dashboard";
+    this.branch = env.GITHUB_BRANCH || "main";
+  }
+  headers() {
+    return {
+      "authorization": `Bearer ${this.token}`,
+      "accept": "application/vnd.github+json",
+      "user-agent": "pitchford-os-worker",
+      "x-github-api-version": "2022-11-28",
+    };
+  }
+  async read(path) {
+    const url = `https://api.github.com/repos/${this.repo}/contents/${path}?ref=${this.branch}`;
+    const r = await fetch(url, { headers: this.headers() });
+    if (!r.ok) throw new Error(`github read ${r.status}`);
+    const j = await r.json();
+    const text = decodeB64(j.content);
+    return { sha: j.sha, data: JSON.parse(text) };
+  }
+  async write(path, data, sha, message) {
+    const url = `https://api.github.com/repos/${this.repo}/contents/${path}`;
+    const content = encodeB64(JSON.stringify(data, null, 2) + "\n");
+    const r = await fetch(url, {
+      method: "PUT",
+      headers: { ...this.headers(), "content-type": "application/json" },
+      body: JSON.stringify({ message, content, sha, branch: this.branch }),
+    });
+    if (!r.ok) throw new Error(`github write ${r.status}: ${(await r.text()).slice(0, 200)}`);
+    return true;
+  }
+}
+
+function decodeB64(s) {
+  const bin = atob(String(s).replace(/\n/g, ""));
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+function encodeB64(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
+// --------------------------------------------------------------- caps
+
+async function enforceCaps(request, env) {
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  const today = new Date().toISOString().slice(0, 10);
+  const burstKey = `burst:${ip}:${Math.floor(Date.now() / 600000)}`;
+  const dayKey = `day:${today}`;
+  try {
+    const [b, d] = await Promise.all([env.LIMITS.get(burstKey), env.LIMITS.get(dayKey)]);
+    const burst = Number(b || 0), day = Number(d || 0);
+    if (burst >= BURST_CAP) return { status: 429, msg: "slow down, try again in a few minutes" };
+    if (day >= DAILY_CAP) return { status: 429, msg: `daily cap of ${DAILY_CAP} reached` };
+    await Promise.all([
+      env.LIMITS.put(burstKey, String(burst + 1), { expirationTtl: 900 }),
+      env.LIMITS.put(dayKey, String(day + 1), { expirationTtl: 172800 }),
+    ]);
+    return null;
+  } catch {
+    return { status: 503, msg: "rate limiter unavailable" };
+  }
+}
+
+// --------------------------------------------------------------- utils
 
 function cors(origin) {
   return {
@@ -187,7 +459,6 @@ function cors(origin) {
     "Access-Control-Max-Age": "86400",
   };
 }
-
 function json(obj, status, origin) {
   return new Response(JSON.stringify(obj), {
     status,

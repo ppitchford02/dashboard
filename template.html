@@ -111,6 +111,28 @@ body{
 
 
 
+.cmd{
+  display:flex;align-items:center;gap:10px;border:1px solid var(--rule);
+  background:var(--bg);padding:11px 14px;text-align:left;margin-top:4px;
+}
+.cmd:focus-within{border-color:var(--gold);}
+.cmd .car{color:var(--gold);font-size:17px;}
+.cmd .st{color:var(--muted);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:600;white-space:nowrap;}
+input.ph{
+  background:none;border:none;outline:none;font-family:var(--text-face);
+  color:var(--ink);width:100%;padding:0;flex:1;font-size:16px;font-weight:500;
+}
+input.ph::placeholder{color:var(--muted);font-style:italic;}
+input.ph:disabled{cursor:not-allowed;}
+.thread{margin-top:14px;text-align:left;max-height:420px;overflow-y:auto;}
+.turn{border-top:1px solid var(--rule-soft);padding:12px 2px 0;margin-top:12px;}
+.turn:first-child{border-top:none;margin-top:0;}
+.turn .q{color:var(--gold);font-size:15px;margin:0 0 8px;font-style:italic;font-weight:600;}
+.turn .a{color:var(--body);font-size:15.5px;line-height:1.65;margin:0;white-space:pre-wrap;}
+.turn .a.err{color:var(--rust);}
+.turn .a.changed{color:var(--ink);}
+.turn .refresh{color:var(--muted);font-size:12.5px;margin:8px 0 0;font-style:italic;}
+
 /* ---------- terrain ---------- */
 .terrain{padding:16px 15px 8px;} .terrain svg{display:block;width:100%;height:auto;}
 .acts{display:flex;border-top:1px solid var(--rule-soft);}
@@ -264,6 +286,13 @@ body{
       </svg>
       <p class="hello">{{GREETING}}</p>
       <p class="sub">{{SUBLINE}}</p>
+      <div class="cmd">
+        <span class="car">&#8250;</span>
+        <input id="ask" class="ph" type="text" autocomplete="off"
+               placeholder="Ask, or tell me to change something&hellip;" {{ASK_DISABLED}}>
+        <span class="st" id="askst">{{ASK_STATE}}</span>
+      </div>
+      <div id="thread" class="thread"></div>
     </div>
 
     <div class="panel">
@@ -340,6 +369,81 @@ function tick(){
 }
 tick();
 setInterval(tick, 30000);
+
+var ASK_ENDPOINT = "{{ASK_ENDPOINT}}";
+var input  = document.getElementById('ask');
+var stateEl= document.getElementById('askst');
+var thread = document.getElementById('thread');
+var convo = [];
+var busy = false;
+
+function pass(){
+  var p = sessionStorage.getItem('dashpass');
+  if(!p){
+    p = window.prompt('Passphrase');
+    if(p) sessionStorage.setItem('dashpass', p);
+  }
+  return p;
+}
+
+function addTurn(q, a, cls){
+  var d = document.createElement('div');
+  d.className = 'turn';
+  var qp = document.createElement('p'); qp.className='q'; qp.textContent = '\u203A ' + q;
+  var ap = document.createElement('p'); ap.className='a' + (cls?' '+cls:''); ap.textContent = a;
+  d.appendChild(qp); d.appendChild(ap);
+  thread.insertBefore(d, thread.firstChild);
+  return d;
+}
+
+function scheduleReload(turnEl){
+  var note = document.createElement('p');
+  note.className = 'refresh';
+  var left = 100;
+  note.textContent = 'Page updates in about ' + left + 's';
+  turnEl.appendChild(note);
+  var iv = setInterval(function(){
+    left -= 10;
+    if(left <= 0){ clearInterval(iv); location.reload(); }
+    else note.textContent = 'Page updates in about ' + left + 's';
+  }, 10000);
+}
+
+async function ask(q){
+  var p = pass();
+  if(!p){ return; }
+  busy = true; stateEl.textContent = 'Thinking'; input.disabled = true;
+  try{
+    var r = await fetch(ASK_ENDPOINT, {
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify({ question:q, pass:p, history:convo })
+    });
+    var data = await r.json();
+    if(!r.ok){
+      if(r.status === 401){ sessionStorage.removeItem('dashpass'); }
+      addTurn(q, data.error || ('error ' + r.status), 'err');
+    } else {
+      var el = addTurn(q, data.answer, data.changed ? 'changed' : '');
+      if(data.changed){ scheduleReload(el); }
+      convo.push({role:'user', content:q});
+      convo.push({role:'assistant', content:data.answer});
+      if(convo.length > 10) convo = convo.slice(-10);
+    }
+  } catch(e){
+    addTurn(q, 'could not reach the endpoint', 'err');
+  }
+  busy = false; stateEl.textContent = 'Idle'; input.disabled = false; input.focus();
+}
+
+if(input && ASK_ENDPOINT){
+  input.addEventListener('keydown', function(e){
+    if(e.key === 'Enter' && !busy){
+      var q = input.value.trim();
+      if(q){ input.value = ''; ask(q); }
+    }
+  });
+}
 
 function pick(i){
   document.querySelectorAll('.tab').forEach(function(t,n){t.classList.toggle('sel',n===i);});

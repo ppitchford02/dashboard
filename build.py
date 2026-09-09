@@ -427,6 +427,9 @@ def main():
         "{{PENDING}}": pending_block(cfg["pending"]),
         "{{BUILT_AT}}": now.strftime("%d %b %Y %H:%M").upper(),
         "{{TZ}}": cfg.get("timezone", "America/New_York"),
+        "{{ASK_ENDPOINT}}": cfg.get("ask_endpoint", ""),
+        "{{ASK_DISABLED}}": "" if cfg.get("ask_endpoint") else "disabled",
+        "{{ASK_STATE}}": "Idle" if cfg.get("ask_endpoint") else "Offline",
         "{{NEXT_DUE_ISO}}": next_due_iso,
     }
 

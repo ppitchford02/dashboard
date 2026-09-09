@@ -76,43 +76,45 @@ on purpose — worth confirming the manual loop first.
 
 ## The ask box
 
-The box under the greeting is off until `ask_endpoint` in data.json points at a
-Cloudflare Worker. Until then it renders greyed out and says OFFLINE, which is
-honest rather than decorative.
+The box under the greeting talks to a Cloudflare Worker (`worker.js`). The
+Worker holds the API key, checks your passphrase, caps spend, reads the live
+data.json from the repo, and can **write** to it when you tell it to.
 
-`worker.js` is the code that goes in the Worker. It holds the API key so the
-browser never sees it, checks a passphrase, enforces a daily cap and a per-IP
-burst limit, then fetches your live data.json so answers know today's page.
+It runs on Sonnet, can search the web, and has five tools: add_deadline,
+remove_deadline, add_attention, remove_attention, set_agent_status. Say
+"add a civ pro memo due friday at noon" and it edits data.json in the repo,
+which triggers the rebuild workflow, which republishes the page. The box shows
+a countdown and reloads itself when that lands.
 
-Setup, once:
+Worker settings (Settings → Variables and secrets):
 
-1. Make a free account at cloudflare.com.
-2. Compute → Workers → Create → paste `worker.js` in, deploy.
-3. Storage → KV → create a namespace called `LIMITS`.
-4. In the Worker's Settings → Bindings, add a KV binding named `LIMITS`
-   pointing at that namespace.
-5. In Settings → Variables, add two **secrets**:
-   `ANTHROPIC_API_KEY` and `DASH_PASSPHRASE` (the phrase is yours to pick).
-6. In the same place, add two plain **variables**:
-   `ALLOWED_ORIGIN` = `https://ppitchford02.github.io`
-   `DATA_URL` = the raw GitHub URL of data.json
-7. Copy the Worker's URL into `ask_endpoint` in data.json, then `./deploy.sh`.
+Secrets:
+- `ANTHROPIC_API_KEY`
+- `DASH_PASSPHRASE`
+- `GITHUB_TOKEN` — fine-grained, this repo only, Contents: read and write
 
-The caps live at the top of worker.js: 50 messages a day, 8 per IP per ten
-minutes, and the cheap model. Raise them once you know what it actually costs.
+Plain variables:
+- `ALLOWED_ORIGIN` = `https://ppitchford02.github.io` (no trailing slash)
+- `GITHUB_REPO` = `ppitchford02/dashboard`
+- `GITHUB_BRANCH` = `main`
 
-If the rate limiter can't be reached the Worker returns an error rather than
-letting the request through, so a KV outage can't run up a bill.
+Binding: KV namespace named `LIMITS`.
 
-## What it can and can't do
+Caps at the top of worker.js: 60 messages a day, 10 per IP per ten minutes,
+3 web searches per message. Raise once you know the cost.
 
-It answers about your day from data.json. It cannot change anything — no adding
-deadlines, no editing the page. That's deliberate for a first version: a public
-endpoint that can write to your repo is a different risk conversation.
+## Automatic updates
 
-The shape is ready for it though. Adding write actions means giving the Worker a
-GitHub token and a tools array, and the passphrase gate and caps already built
-are the parts that make that safe to consider.
+`.github/workflows/rebuild.yml` runs on GitHub every 15 minutes, on any push,
+and on demand from the Actions tab. It rebuilds index.html, commits it if it
+changed, and publishes to Pages. Your Mac is not involved, so it keeps running
+with the laptop shut.
+
+The clock and the deadline countdown in the header tick live in the browser.
+The BUILT line at the bottom is when the data was last pulled.
+
+The older `static.yml` workflow is now redundant; delete it from
+`.github/workflows` or leave it, it does no harm.
 
 ## If a push fails
 

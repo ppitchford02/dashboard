@@ -2,19 +2,19 @@ name: Rebuild and publish dashboard
 
 on:
   schedule:
-    - cron: "*/15 * * * *"    # every 15 min; GitHub queues these so expect drift
+    - cron: "7,22,37,52 * * * *" # includes the first build after 06:00 Akron time
   workflow_dispatch:
   push:
     branches: ["main"]
+  pull_request:
+    branches: ["main"]
 
 concurrency:
-  group: pages
+  group: dashboard-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
-  contents: write
-  pages: write
-  id-token: write
+  contents: read
 
 jobs:
   build:
@@ -24,30 +24,46 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Build index.html
-        run: python3 build.py
-
-      - name: Commit if changed
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Restore previous news edition
+        uses: actions/cache/restore@v4
+        with:
+          path: news.json
+          key: morning-news-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            morning-news-${{ github.ref_name }}-
+            morning-news-main-
+      - name: Regression checks
         run: |
-          if ! git diff --quiet -- index.html; then
-            git config user.name  "dashboard bot"
-            git config user.email "actions@github.com"
-            git add index.html
-            git commit -m "Rebuild $(date -u '+%Y-%m-%d %H:%M') UTC"
-            git push
-          else
-            echo "index.html unchanged"
-          fi
-
+          python3 -m unittest discover -s tests
+          node --test tests/worker.test.mjs
+      - name: Build dashboard
+        run: python3 build.py
+      - name: Save news edition
+        if: github.event_name != 'pull_request'
+        uses: actions/cache/save@v4
+        with:
+          path: news.json
+          key: morning-news-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Prepare public files
+        run: |
+          mkdir -p public
+          cp index.html data.json news.json public/
       - name: Upload for Pages
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
-          path: "."
+          path: public
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

@@ -1,123 +1,106 @@
-# PITCHFORD OS — dashboard generator
+# PITCHFORD OS
 
-Builds `index.html` from `data.json` plus live weather, then publishes it to
-GitHub Pages.
+A compact personal dashboard with an assistant, attention items, schedule,
+workforce, weather, personal inbox, and a morning news brief. Navy and gold,
+with a responsive two-column overview. Client and firm matters stay off this page.
 
-Live at: https://ppitchford02.github.io/dashboard
+Live dashboard: https://ppitchford02.github.io/dashboard/
 
 ## Files
 
-| file | what it is |
-|---|---|
-| `data.json` | everything the page says. **This is the file you edit.** |
-| `template.html` | the design, with `{{TOKENS}}` where values go. Rarely touched. |
-| `build.py` | fills the template from `data.json`, writes `index.html` |
-| `deploy.sh` | runs build.py, commits, pushes |
-| `index.html` | generated output. Never edit by hand, it gets overwritten. |
+- `data.json`: existing personal content, dates, timezone, assistant endpoint.
+- `template.html`: page layout and browser behavior.
+- `build.py`: Python standard-library renderer.
+- `news.py`: publisher RSS fetch, daily edition cache, safe headline rendering.
+- `news.json`: last successfully fetched edition for each feed.
+- `index.html`: generated page; edit the template instead.
+- `worker.js`: separately deployed Cloudflare assistant endpoint.
+- `.github/workflows/rebuild.yml`: validation, refresh, and GitHub Pages publishing.
 
-## Running it
+## Build and check
 
-```
-cd ~/dashboard
-./deploy.sh
-```
-
-That's the whole loop. Build only, no publish:
-
-```
+```sh
 python3 build.py
-```
-
-Render without writing anything, to check for errors:
-
-```
 python3 build.py --check
+python3 -m unittest discover -s tests
+node --test tests/worker.test.mjs
 ```
 
-No pip installs. Standard library only.
+`--check` renders in memory and writes neither the page nor the news cache.
+No Python packages are required. Python 3.12 and Node 22 run in CI.
 
-## What's computed vs what you write
+## Morning brief
 
-**Computed automatically** — don't put these in data.json, they're derived:
+The first successful build after **06:00 America/New_York** fetches three
+headlines per feed. The sports card switches between NFL, NBA, and MLB.
+Each headline links directly to its publisher, with attribution and publication
+date. These are publisher headlines, not invented or AI-written summaries.
 
-- current date, time, and the BUILT stamp at the bottom
-- weather, from Open-Meteo (no API key). Falls back to `weather_fallback`
-  in data.json if the request fails
-- the countdown to your next deadline, and its colour
-- points still open (sums `points` on deadlines that haven't passed)
-- the schedule panel, grouped by day, with past items dropped
-- TODAY / TOMORROW labels
-- the day-shape curve and the morning/afternoon/evening lines
-- greeting wording, from the hour
-- the dial arc, showing how much of the day is gone
+Sources:
+- AI: https://techcrunch.com/category/artificial-intelligence/feed/
+- Akron: https://signalakron.org/feed/
+- NFL: https://www.espn.com/espn/rss/nfl/news
+- NBA: https://www.espn.com/espn/rss/nba/news
+- MLB: https://www.espn.com/espn/rss/mlb/news
 
-**You write** — in `data.json`:
+ESPN feed information and terms: https://www.espn.com/espn/news/story?page=rssinfo
 
-- deadlines, with `due` as `YYYY-MM-DDTHH:MM` local time
-- attention items, with `level` set to `high`, `med`, or `low`
-- agents, courses, pending panels, inbox note
+The workflow checks every 15 minutes (at minutes 07, 22, 37, and 52), and also
+runs on main-branch pushes or manual dispatch. GitHub may delay scheduled runs;
+06:00 is the refresh threshold, not a guaranteed delivery time. Daily rollover
+uses Akron's timezone, including daylight saving time. Each successful feed is
+cached until the next edition; failed feeds retry on subsequent builds while
+retaining their last successful headlines, explicitly labeled as a previous
+edition. A missing feed has an honest unavailable state. No news API keys,
+newsletter subscriptions, or email sending are needed.
 
-## The catch worth knowing
+GitHub Actions restores/saves the news cache. It builds and publishes directly,
+without committing generated files every 15 minutes. Only `index.html`,
+`data.json`, and `news.json` are included in the Pages artifact. One workflow
+owns publishing; the duplicate static workflow has been removed. Pull requests
+run checks and builds without deploying.
 
-Deadlines expire on their own, because the schedule drops anything in the past.
-Attention items do **not**. If one says "tomorrow night" it will still say that
-next week. Clear finished ones out of `data.json` when you add new ones.
+An idle browser tab refreshes every 15 minutes to receive updated content. It
+will not auto-refresh while an assistant request, unsent text, or conversation
+is present. The clock, date, and next-deadline countdown update in Akron time.
+A conversation may be refreshed manually when ready to load the latest page.
 
-That's the seam where this should eventually read from law-school-os instead of
-a hand-kept file. `build.py` only needs `data["deadlines"]` to be a list of
-dicts with `title`, `due`, and optionally `points` / `note` — so an adapter that
-converts a sweep into that shape is all that's missing.
+## Assistant
 
-## Scheduling it
+The ask box uses the configured `ask_endpoint`. Authentication uses the existing
+passphrase. The Worker answers from dashboard data and can add or remove
+deadlines/attention items and update agent status. It can also use web search.
 
-Once you're happy running it by hand, a launchd job can call `deploy.sh` on a
-timer, the same way law-school-os already runs `bin/morning.sh`. Not set up yet
-on purpose — worth confirming the manual loop first.
-
-## The ask box
-
-The box under the greeting talks to a Cloudflare Worker (`worker.js`). The
-Worker holds the API key, checks your passphrase, caps spend, reads the live
-data.json from the repo, and can **write** to it when you tell it to.
-
-It runs on Sonnet, can search the web, and has five tools: add_deadline,
-remove_deadline, add_attention, remove_attention, set_agent_status. Say
-"add a civ pro memo due friday at noon" and it edits data.json in the repo,
-which triggers the rebuild workflow, which republishes the page. The box shows
-a countdown and reloads itself when that lands.
-
-Worker settings (Settings → Variables and secrets):
-
-Secrets:
+Cloudflare secrets:
 - `ANTHROPIC_API_KEY`
 - `DASH_PASSPHRASE`
-- `GITHUB_TOKEN` — fine-grained, this repo only, Contents: read and write
+- `GITHUB_TOKEN`: fine-grained, this repo only, Contents read/write
 
-Plain variables:
-- `ALLOWED_ORIGIN` = `https://ppitchford02.github.io` (no trailing slash)
-- `GITHUB_REPO` = `ppitchford02/dashboard`
-- `GITHUB_BRANCH` = `main`
+Variables:
+- `ALLOWED_ORIGIN`: `https://ppitchford02.github.io`
+- `GITHUB_REPO`: `ppitchford02/dashboard`
+- `GITHUB_BRANCH`: `main`
+- `ANTHROPIC_MODEL`: optional override of the existing default model
 
-Binding: KV namespace named `LIMITS`.
+KV binding: `LIMITS`. Existing limits: 60 messages/day, 10 per IP per ten
+minutes, three web searches per message. KV counters are best-effort rate limits,
+not atomic hard spending limits under concurrent requests.
 
-Caps at the top of worker.js: 60 messages a day, 10 per IP per ten minutes,
-3 web searches per message. Raise once you know the cost.
+Dates are validated before writes. Empty or ambiguous removal/status matches
+are rejected instead of modifying multiple records. GitHub SHA checks prevent
+silently overwriting concurrent edits; conflicts return a tool error.
 
-## Automatic updates
+**Worker changes require a separate Cloudflare deployment.** The Pages workflow
+does not deploy `worker.js`. Existing secrets and bindings must be retained.
+Live model calls and production mutations are not exercised by the local tests.
 
-`.github/workflows/rebuild.yml` runs on GitHub every 15 minutes, on any push,
-and on demand from the Actions tab. It rebuilds index.html, commits it if it
-changed, and publishes to Pages. Your Mac is not involved, so it keeps running
-with the laptop shut.
+## Content upkeep
 
-The clock and the deadline countdown in the header tick live in the browser.
-The BUILT line at the bottom is when the data was last pulled.
+Deadlines use `YYYY-MM-DDTHH:MM` in the configured timezone. Expired deadlines
+are dropped at build time; the live countdown advances to the next item without
+getting stuck on an expired one. Attention items still need manual completion
+or assistant removal; prose such as “tomorrow” does not update itself.
 
-The older `static.yml` workflow is now redundant; delete it from
-`.github/workflows` or leave it, it does no harm.
-
-## If a push fails
-
-The repo uses a fine-grained token scoped to `dashboard` only, stored in the
-macOS keychain. If it 403s, the token has expired and needs regenerating at
-github.com/settings/personal-access-tokens with Contents set to read and write.
+The Course Load, The Day graph, and Last Run panels have been removed. Their
+historical data is preserved in `data.json` for compatibility with existing
+adapters. Pending panels remain accessible in their own view.

@@ -133,6 +133,7 @@ export default {
       return json({ error: "bad request" }, 400, origin);
     }
 
+    if (!body || typeof body !== "object" || Array.isArray(body)) return json({ error: "bad request" }, 400, origin);
     const question = String(body.question || "").trim();
     const pass = String(body.pass || "");
     const history = Array.isArray(body.history) ? body.history.slice(-10) : [];
@@ -185,19 +186,21 @@ export default {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const tools = useWebSearch ? TOOLS : TOOLS.filter((t) => t.name !== "web_search");
 
-      let resp = await callModel(env, { system, messages, tools });
+      let resp;
+      try { resp = await callModel(env, { system, messages, tools }); }
+      catch { return json({ error: 'Assistant request failed. Please retry.', changed }, 502, origin); }
 
       // If web search is the problem (unsupported / disabled), retry once without it
       if (!resp.ok && resp.status === 400 && useWebSearch) {
         console.log("retrying without web search", resp.detail.slice(0, 200));
         useWebSearch = false;
-        resp = await callModel(env, {
-          system, messages, tools: TOOLS.filter((t) => t.name !== "web_search"),
-        });
+        try {
+          resp = await callModel(env, { system, messages, tools: TOOLS.filter((t) => t.name !== "web_search") });
+        } catch { return json({ error: 'Assistant request failed. Please retry.', changed }, 502, origin); }
       }
       if (!resp.ok) {
         console.log("anthropic error", resp.status, resp.detail.slice(0, 300));
-        return json({ error: `model error ${resp.status}` }, 502, origin);
+        return json({ error: `model error ${resp.status}`, changed }, 502, origin);
       }
 
       const out = resp.data;
@@ -281,12 +284,13 @@ function buildSystem(nowLocal, todayIso, tz, dash) {
 async function callModel(env, { system, messages, tools }) {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
+    signal: AbortSignal.timeout(60000),
     headers: {
       "content-type": "application/json",
       "x-api-key": env.ANTHROPIC_API_KEY,
       "anthropic-version": "2023-06-01",
     },
-    body: JSON.stringify({ model: MODEL, max_tokens: MAX_TOKENS, system, messages, tools }),
+    body: JSON.stringify({ model: env.ANTHROPIC_MODEL || MODEL, max_tokens: MAX_TOKENS, system, messages, tools }),
   });
   if (!r.ok) return { ok: false, status: r.status, detail: await r.text() };
   return { ok: true, data: await r.json() };
@@ -294,7 +298,36 @@ async function callModel(env, { system, messages, tools }) {
 
 // --------------------------------------------------------------- tools impl
 
-async function runTool(name, input, gh) {
+export async function runTool(name, input, gh) {
+  if (!input || typeof input !== 'object') throw new Error('Missing tool input');
+  const requireText = (key) => {
+    if (typeof input[key] !== 'string' || !input[key].trim()) throw new Error(`Missing ${key}`);
+  };
+  if (['add_deadline', 'add_attention'].includes(name)) requireText('title');
+  if (name === 'add_attention') {
+    requireText('body');
+    if (input.level && !['high','med','low'].includes(input.level)) throw new Error('Invalid attention level');
+  }
+  if (name === 'add_deadline') {
+    const validDate = (value) => {
+      if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return false;
+      const dt = new Date(value + 'Z');
+      return !isNaN(dt) && dt.toISOString().slice(0,16) === value;
+    };
+    if (!validDate(input.due)) throw new Error('Invalid due date; use YYYY-MM-DDTHH:MM');
+    if (input.end && (!validDate(input.end) || input.end <= input.due)) throw new Error('End must be after start');
+    if (input.points !== undefined && (!Number.isInteger(input.points) || input.points < 0)) throw new Error('Invalid points');
+  }
+  if (name.startsWith('remove_')) requireText('title_contains');
+  if (name === 'set_agent_status') {
+    requireText('name_contains');
+    if (!['on','build','off'].includes(input.status)) throw new Error('Invalid agent status');
+  }
+  const uniqueMatch = (items, key, query) => {
+    const matches = items.filter(x => String(x[key]).toLowerCase().includes(query.trim().toLowerCase()));
+    if (matches.length > 1) throw new Error('Several items match. Ask which one before changing anything.');
+    return matches[0];
+  };
   const mutate = async (fn) => {
     const file = await gh.read("data.json");
     const d = file.data;
@@ -327,13 +360,10 @@ async function runTool(name, input, gh) {
 
     case "remove_deadline":
       return mutate((d) => {
-        const q = input.title_contains.toLowerCase();
-        const before = (d.deadlines || []).length;
-        d.deadlines = (d.deadlines || []).filter(
-          (x) => !String(x.title).toLowerCase().includes(q)
-        );
-        const n = before - d.deadlines.length;
-        return n ? `Remove ${n} deadline(s) matching "${input.title_contains}"` : null;
+        const hit = uniqueMatch(d.deadlines || [], 'title', input.title_contains);
+        if (!hit) return null;
+        d.deadlines = d.deadlines.filter(x => x !== hit);
+        return `Remove deadline: ${hit.title}`;
       });
 
     case "add_attention":
@@ -350,27 +380,19 @@ async function runTool(name, input, gh) {
 
     case "remove_attention":
       return mutate((d) => {
-        const q = input.title_contains.toLowerCase();
-        const before = (d.attention || []).length;
-        d.attention = (d.attention || []).filter(
-          (x) => !String(x.title).toLowerCase().includes(q)
-        );
-        const n = before - d.attention.length;
-        return n ? `Remove ${n} attention item(s) matching "${input.title_contains}"` : null;
+        const hit = uniqueMatch(d.attention || [], 'title', input.title_contains);
+        if (!hit) return null;
+        d.attention = d.attention.filter(x => x !== hit);
+        return `Remove attention: ${hit.title}`;
       });
 
     case "set_agent_status":
       return mutate((d) => {
-        const q = input.name_contains.toLowerCase();
-        let hit = 0;
-        for (const a of d.agents || []) {
-          if (String(a.name).toLowerCase().includes(q)) {
-            a.status = input.status;
-            if (input.schedule) a.schedule = input.schedule;
-            hit++;
-          }
-        }
-        return hit ? `Set ${hit} agent(s) matching "${input.name_contains}" to ${input.status}` : null;
+        const hit = uniqueMatch(d.agents || [], 'name', input.name_contains);
+        if (!hit) return null;
+        hit.status = input.status;
+        if (input.schedule) hit.schedule = input.schedule;
+        return `Update agent: ${hit.name}`;
       });
 
     default:
@@ -395,7 +417,7 @@ class Repo {
     };
   }
   async read(path) {
-    const url = `https://api.github.com/repos/${this.repo}/contents/${path}?ref=${this.branch}`;
+    const url = `https://api.github.com/repos/${this.repo}/contents/${path}?ref=${encodeURIComponent(this.branch)}`;
     const r = await fetch(url, { headers: this.headers() });
     if (!r.ok) throw new Error(`github read ${r.status}`);
     const j = await r.json();

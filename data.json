@@ -75,6 +75,12 @@
       "course": "LAWX 730",
       "note": "Room 281 · per course schedule",
       "kind": "class"
+    },
+    {
+      "title": "test memo",
+      "due": "2026-09-11T12:00",
+      "kind": "deadline",
+      "note": ""
     }
   ],
   "attention": [

@@ -79,6 +79,12 @@
   ],
   "attention": [
     {
+      "title": "Deployment verification 20260910-1754",
+      "body": "Temporary test item; safe to remove after verification.",
+      "when": "TEST",
+      "level": "low"
+    },
+    {
       "title": "Two problem sets land together tomorrow night",
       "body": "Both belong to Class 6, thirty points each. Word rather than PDF, Bluebook citations even where the question does not ask, honor pledge typed out.",
       "when": "WED 23:59 · LAWX 730",

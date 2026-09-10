@@ -14,6 +14,7 @@ from news import news_block
 import sys
 import html
 import math
+import os
 import urllib.request
 import urllib.error
 from datetime import datetime, timedelta, date
@@ -93,8 +94,8 @@ def weather_blocks(cfg, now):
     wx = fetch_weather(cfg["location"]["lat"], cfg["location"]["lon"])
     if not wx:
         fb = cfg["weather_fallback"]
-        now_s = f"{fb['now_f']}\u00b0F {fb['condition']}"
-        badge = f"{fb['now_f']}\u00b0 \u00b7 {fb['condition']}"
+        now_s = f"{fb['now_f']}\u00b0F {fb['condition']} · SAVED WEATHER"
+        badge = f"{fb['now_f']}\u00b0 \u00b7 {fb['condition']} · SAVED WEATHER"
         rows = "".join(
             f'        <div class="row"><span class="name">{esc(d["label"])}</span>'
             f'<span class="meta">{esc(d["meta"])}</span></div>\n'
@@ -318,8 +319,21 @@ def main():
 
     from zoneinfo import ZoneInfo
     tz = ZoneInfo(cfg.get('timezone', 'America/New_York'))
-    live_deadlines = [dict(title=d['title'], due=parse_dt(d['due']).replace(tzinfo=tz).isoformat()) for d in sorted(deadlines, key=lambda d:d['due'])]
+    live_deadlines = [dict(d, due=parse_dt(d['due']).replace(tzinfo=tz).isoformat(),
+                          end=parse_dt(d['end']).replace(tzinfo=tz).isoformat() if d.get('end') else None)
+                      for d in sorted(deadlines, key=lambda d:d['due'])]
+    dashboard = {key: cfg.get(key, []) for key in ('courses', 'agents', 'attention', 'pending')}
+    dashboard.update(name=cfg['name'], timezone=cfg.get('timezone', 'America/New_York'),
+                     deadlines=live_deadlines, inbox_note=cfg.get('inbox_note', ''),
+                     built_at=now.replace(tzinfo=tz).isoformat(),
+                     build_url=('https://github.com/ppitchford02/dashboard/actions/runs/' + os.environ['GITHUB_RUN_ID'])
+                         if os.environ.get('GITHUB_RUN_ID') else '',
+                     commit=os.environ.get('GITHUB_SHA', ''))
     repl = {
+        "{{DASHBOARD_JSON}}": js(dashboard),
+        "{{STYLES}}": (HERE / 'dashboard.css').read_text(),
+        "{{CORE_JS}}": (HERE / 'dashboard-core.js').read_text(),
+        "{{DASHBOARD_JS}}": (HERE / 'dashboard.js').read_text(),
         "{{NEWS}}": news_block(now, write=not check),
         "{{TZ_JSON}}": js(cfg.get('timezone', 'America/New_York')),
         "{{ASK_ENDPOINT_JSON}}": js(cfg.get('ask_endpoint', '')),

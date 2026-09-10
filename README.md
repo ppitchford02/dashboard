@@ -1,5 +1,39 @@
 # PITCHFORD OS
 
+## Daily desk
+
+Today centers the next useful action and a selectable weekly agenda. The page
+switches to class prep in the 90 minutes before class, class notes while class
+is underway, and reflection for 90 minutes afterward. Evening reset begins at
+8:00 PM. Pre-class focus suggestions fit the available time. All clock labels
+use 12-hour time in the configured timezone.
+
+Quick captures, course/day study notes, prep checklists, theme preference, and
+focus history are stored only in this browser. Notes can be downloaded as text.
+Storage failures are shown explicitly. Local notes are never included in
+assistant requests or published automatically. “Add to dashboard” opens a clear
+public-save form and requires the existing passphrase. Captures remain local
+after publication, and completed captures can be reopened.
+
+Attention cards can link to schedule entries through `related_deadlines` (an
+array of exact deadline titles). Relative labels derive from those dates, and
+a past deadline says completion is unconfirmed. No submission is assumed.
+Clear/add/restore buttons use authenticated structured Worker actions, with
+an undo receipt and a GitHub commit link. Stale items and duplicate restores
+are rejected; unrelated data is preserved. These buttons do not call the model.
+
+Study includes a class kit, Brightspace link, local notes, checklists, reflection,
+and a persistent focus timer. It does not claim to have fetched assigned reading.
+Systems shows the actual publishing run and distinguishes configured agent
+statuses from verified execution. No new background messages or notifications
+are scheduled; the daily routines adapt the open page.
+
+Front-end sources are `dashboard.css`, `dashboard-core.js`, and `dashboard.js`.
+The renderer embeds them in the page. Run `node --test tests/*.test.mjs` and
+`python3 -m unittest discover -s tests` before publication. The Worker provides
+`GET /health` with its non-secret version and accepts authenticated POST actions
+`add_attention`, `complete_attention`, and `restore_attention`.
+
 A compact personal dashboard with an assistant, attention items, schedule,
 workforce, weather, personal inbox, and a morning news brief. Navy and gold,
 with a responsive two-column overview. Client and firm matters stay off this page.

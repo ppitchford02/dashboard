@@ -38,7 +38,7 @@ jobs:
       - name: Regression checks
         run: |
           python3 -m unittest discover -s tests
-          node --test tests/worker.test.mjs
+          node --test tests/*.test.mjs
       - name: Build dashboard
         run: python3 build.py
       - name: Save news edition

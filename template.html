@@ -1,144 +1,35 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#16274a"><title>PITCHFORD OS</title><style>
-:root{--bg:#f8f6f0;--panel:#fff;--ink:#16274a;--body:#263550;--muted:#5d687a;--gold:#82631d;--rule:#dddcd5;--rust:#96341f;--rule-soft:#eeeee8}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--body);font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,input{font:inherit}button,a,input{touch-action:manipulation}a{color:inherit}button{cursor:pointer}button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--gold);outline-offset:4px}[hidden]{display:none!important}.shell{max-width:1180px;margin:auto;padding:28px 24px}.topbar{display:flex;justify-content:space-between;gap:20px;align-items:center;border-bottom:2px solid var(--ink);padding-bottom:18px}.brand{font:600 22px Georgia,serif;letter-spacing:.08em}.brand small{color:var(--gold)}.topmeta{display:flex;gap:16px;align-items:center;font-size:14px;color:var(--muted)}#clock{font-size:20px;color:var(--ink)}.intro{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:24px 0 18px}.hello{font:28px/1.2 Georgia,serif;margin:0 0 8px}.hello b{font-weight:400}.sub{margin:0;color:var(--muted);font-size:14px}.tabs{display:flex;gap:6px}.tab,.league{border:1px solid transparent;background:transparent;color:var(--muted);padding:8px 12px;border-radius:5px;font-size:14px}.tab.sel,.league.sel{background:var(--ink);color:white}.n{margin-left:6px}.view{display:none}.view.sel{display:block}.layout{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(280px,1fr);gap:20px;align-items:start}.col{display:grid;gap:20px;min-width:0}.panel{background:var(--panel);border:1px solid var(--rule);border-radius:8px;overflow:hidden}.panel>h2,.section-heading{margin:0;padding:16px 20px;border-bottom:1px solid var(--rule-soft);font-size:14px;letter-spacing:.04em;display:flex;justify-content:space-between;gap:12px;align-items:center}.badge{font-size:13px;font-weight:500;color:var(--gold);letter-spacing:0}.hot{color:var(--rust)}.mute{color:var(--muted)}.body{padding:6px 20px 16px}.note{margin:12px 0;color:var(--muted);font-size:14px}.core{padding:18px 20px;background:var(--ink);color:white;border-radius:8px}.core label{font-size:14px;display:block;margin-bottom:10px}.cmd{display:flex;align-items:center;gap:10px}.ph{flex:1;min-width:0;padding:11px 12px;border:1px solid #aab0bb;border-radius:4px;background:#fff;color:var(--ink);font-size:16px}.send{border:1px solid #a9925b;border-radius:4px;background:#bba16a;color:#152440;padding:11px 14px}.st{font-size:12px;color:#d6dce6;display:block;margin-top:8px}.thread{max-height:360px;overflow:auto}.turn{padding-top:12px;border-top:1px solid #536078;margin-top:12px}.q{color:#e1c78f;margin:0 0 6px}.a{margin:0;white-space:pre-wrap;font-size:16px}.err{color:#ffbcac}.refresh{font-size:13px;color:#d6dce6}.att{padding:16px 20px;border-bottom:1px solid var(--rule-soft);display:flex;gap:12px}.att:last-child{border:0}.bar{width:3px;flex-shrink:0;background:var(--rust)}.bar.med{background:var(--gold)}.bar.low{background:#b5bdc8}.ttl{margin:0 0 5px;font-size:16px;color:var(--ink)}.att p:not(.ttl){margin:0;font-size:14px}.when{display:block;margin-top:7px;font-size:12px;color:var(--muted)}.row{display:flex;gap:10px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--rule-soft);flex-wrap:wrap}.row:last-child{border:0}.name{flex:1}.meta{font-size:14px;color:var(--muted)}.dot{height:6px;width:6px;border-radius:50%;background:#a1a9b5}.dot.on{background:var(--gold)}.dot.build{background:#af811d}.daysep{display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid var(--rule);padding:14px 0 8px;font-size:12px;color:var(--muted)}.sch{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--rule-soft)}.tm{flex:0 0 132px;font-size:14px;color:var(--gold)}.ev{font-size:16px}.ev small{display:block;font-size:14px;color:var(--muted);margin-top:4px}.brief{margin-top:24px}.brief-head{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:12px}.brief-head h2{font:24px Georgia,serif;margin:0}.brief-head p{margin:0;font-size:13px;color:var(--muted)}.news-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}.news-card{padding:20px;background:white;border:1px solid var(--rule);border-top:3px solid var(--gold);border-radius:6px}.news-card h3{font:22px Georgia,serif;margin:0 0 4px}.edition{color:var(--muted);font-size:12px;margin:0 0 8px}.story{padding:14px 0;border-bottom:1px solid var(--rule-soft)}.story:last-child{border:0}.story a{text-decoration:none;line-height:1.45;display:block}.story a:hover{text-decoration:underline;text-decoration-color:var(--gold)}.story small{display:block;color:var(--muted);font-size:12px;margin-top:6px}.leagues{display:flex;gap:2px;margin-top:10px}.league{padding:5px 9px}.grid.two{display:grid;grid-template-columns:1fr 1fr;gap:20px}.blocker{display:block;color:var(--gold);margin-top:8px;font-size:13px}.foot{font-size:12px;color:var(--muted);margin:24px 0 0;text-align:right}.panel,.news-card{overflow-wrap:anywhere}
-@media(max-width:850px){.layout{grid-template-columns:1fr}.news-grid{grid-template-columns:1fr}.topbar,.intro{align-items:flex-start;flex-direction:column}.topmeta{flex-wrap:wrap}.grid.two{grid-template-columns:1fr}.brief-head{display:block}.brief-head p{margin-top:6px}}
-@media(max-width:450px){.shell{padding:20px 14px}.hello{font-size:25px}.cmd{gap:6px}.send{padding:11px}.panel>h2{flex-wrap:wrap}}
-</style></head><body>
-<div class="shell">
-<header class="topbar"><div class="brand">PITCHFORD <small>/ OS</small></div><div class="topmeta"><span id="topdate">{{TOPBAR_DATE}}</span><span id="clock">{{TOPBAR_TIME}}</span><span>{{LOC}} · {{WX_NOW}}</span></div></header>
-<div class="intro"><div><h1 class="hello">{{GREETING}}</h1><p class="sub" id="nextline">{{SUBLINE}}</p></div><nav class="tabs" aria-label="Dashboard views"><button class="tab sel" onclick="pick(0)" aria-pressed="true">Overview</button><button class="tab" onclick="pick(1)" aria-pressed="false">Pending <span class="n">{{PEND_COUNT}}</span></button></nav></div>
-<main>
-<div class="view sel" id="v0">
-<div class="layout"><div class="col">
-<section class="core"><label for="ask">Your assistant</label><form class="cmd" id="askform"><input id="ask" class="ph" type="text" autocomplete="off" maxlength="2000" placeholder="Ask or update your dashboard…" {{ASK_DISABLED}}><button class="send" type="submit" {{ASK_DISABLED}}>Send</button></form><span class="st" id="askst" role="status">{{ASK_STATE}}</span><div id="thread" class="thread" aria-live="polite"></div></section>
-<section class="panel att-panel"><h2>Needs attention <span class="badge {{ATT_BADGE_CLASS}}">{{ATT_COUNT}}</span></h2>{{ATT_ITEMS}}</section>
-<section class="panel"><h2>Schedule <span class="badge" id="cdown">{{COUNTDOWN}}</span></h2><div class="body">{{SCHEDULE}}</div></section>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#1b2d48"><meta name="description" content="Preston's daily desk: schedule, study, notes, and the morning edition."><title>PITCHFORD OS</title><style>{{STYLES}}</style></head>
+<body><a class="skip" href="#main">Skip to dashboard</a><div class="shell">
+<header class="topbar"><div class="brand">PITCHFORD <span>/ OS</span></div><div class="topmeta"><span id="topdate">{{TOPBAR_DATE}}</span><time id="clock">{{TOPBAR_TIME}}</time><span>{{LOC}} · {{WX_NOW}}</span></div></header>
+<div class="intro"><div><div class="eyebrow" id="day-context">Your daily desk</div><h1 class="hello" id="greeting">{{GREETING}}</h1></div><nav class="tabs" aria-label="Dashboard views" role="tablist"><button type="button" class="tab" role="tab" id="tab-today" aria-controls="view-today" aria-selected="true" data-view="today">Today</button><button type="button" class="tab" role="tab" id="tab-study" aria-controls="view-study" aria-selected="false" data-view="study">Study</button><button type="button" class="tab" role="tab" id="tab-systems" aria-controls="view-systems" aria-selected="false" data-view="systems">Systems</button><button type="button" class="tab" role="tab" id="tab-later" aria-controls="view-later" aria-selected="false" data-view="later">Later <span class="n">{{PEND_COUNT}}</span></button></nav></div>
+<div class="storage-warning" id="storage-warning" hidden>Browser storage is unavailable. Notes and preferences will last only until this page closes.</div>
+<div id="receipt" class="receipt" role="status" hidden><p id="receipt-message"></p><small id="receipt-state"></small><div class="actions"><button class="button text" id="undo" type="button" hidden>Undo</button><a id="receipt-link" target="_blank" rel="noopener noreferrer" hidden>View saved change</a><button class="button text" id="receipt-dismiss" type="button">Dismiss</button></div></div>
+<main id="main">
+<section id="view-today" role="tabpanel" aria-labelledby="tab-today">
+<div class="grid"><div class="col">
+<section class="hero" aria-labelledby="next-title"><div class="eyebrow" id="next-label">Your next move</div><h2 id="next-title">Take a look at what is ahead.</h2><p id="next-detail">{{SUBLINE}}</p><div class="actions"><button class="button primary" id="next-action" type="button">Plan a study block</button><button class="button secondary" id="hero-focus" type="button">Focus for 20 minutes</button></div></section>
+<section class="panel"><div class="panel-head"><h2>Your week</h2><span id="agenda-label" class="badge"></span></div><div class="week" id="week" aria-label="Choose an agenda day"></div><div class="agenda" id="agenda">{{SCHEDULE}}</div></section>
+<section class="panel"><div class="panel-head"><h2>Your assistant</h2><small>Ask, plan, or update</small></div><div class="body"><form class="cmd" id="askform"><label class="sr" for="ask">Ask your assistant</label><input id="ask" maxlength="2000" placeholder="What should I work on next?" autocomplete="off" {{ASK_DISABLED}}><button class="button primary" type="submit" {{ASK_DISABLED}}>Send</button></form><span class="st" id="askst" role="status">{{ASK_STATE}}</span><div class="suggestions"><button class="button text" type="button" data-prompt="What is on my schedule next? Answer from my dashboard data.">What's next?</button><button class="button text" type="button" data-prompt="Help me plan a focused 20-minute study block before my next class. Do not change the dashboard.">Plan a study block</button></div><div class="thread" id="thread" aria-live="polite"></div></div></section>
 </div><aside class="col">
-<section class="panel"><h2>Workforce <span class="badge">{{AGENTS_ONLINE_LONG}}</span></h2><div class="body">{{AGENT_ROWS}}</div></section>
-<section class="panel"><h2>{{LOC}} weather <span class="badge">{{WX_BADGE}}</span></h2><div class="body">{{WX_ROWS}}</div></section>
-<section class="panel"><h2>Personal inbox</h2><div class="body"><p class="note">{{INBOX_NOTE}}</p></div></section>
+<section class="panel"><div class="panel-head"><h2>Quick capture</h2><small>On this device</small></div><div class="body"><form class="capture-form" id="capture-form"><label class="sr" for="capture-input">A note, task, or loose end</label><input id="capture-input" maxlength="500" placeholder="A note, task, or loose end…"><button type="submit" class="button primary">Save</button></form><div class="storage-state" id="capture-state" role="status">Private to this browser. Choose “Add to dashboard” to share an item.</div><ul class="capture-list" id="captures"></ul><button class="button text" id="toggle-completed" type="button" hidden>Show completed</button></div></section>
+<section class="panel"><div class="panel-head"><h2>Needs attention</h2><span class="badge" id="attention-count">{{ATT_COUNT}}</span></div><div id="attention">{{ATT_ITEMS}}</div></section>
+<section class="panel"><div class="panel-head"><h2>Focus</h2><small>One thing at a time</small></div><div class="body"><div class="timer-top"><div><div class="timer-value" id="timer-value" role="timer">20:00</div><div class="timer-label" id="timer-label">Ready when you are</div></div><label class="sr" for="duration">Focus duration</label><select class="duration" id="duration"><option value="5">5 min</option><option value="10">10 min</option><option value="20" selected>20 min</option><option value="25">25 min</option><option value="45">45 min</option></select></div><div class="actions timer-controls"><button class="button primary" id="timer-toggle" type="button">Start</button><button class="button" id="timer-end" type="button" hidden>End session</button></div><div class="hint" id="timer-status" role="status"></div></div></section>
+<section class="panel"><div class="panel-head"><h2>{{LOC}} weather</h2><span class="badge">{{WX_BADGE}}</span></div><div class="body">{{WX_ROWS}}</div></section>
 </aside></div>
-<section class="brief" aria-labelledby="brief-title"><div class="brief-head"><h2 id="brief-title">The morning brief</h2><p>Fresh headlines each morning · Akron time</p></div><div class="news-grid">{{NEWS}}</div></section>
+<section class="brief" aria-labelledby="brief-title"><div class="brief-head"><h2 id="brief-title">The daily edition</h2><p>AI, Akron, and sports · refreshed each morning</p></div><div class="news-grid">{{NEWS}}</div></section>
+</section>
+<section id="view-study" role="tabpanel" aria-labelledby="tab-study" hidden><div class="grid"><div class="col">
+<section class="panel"><div class="panel-head"><h2>Class kit</h2><span class="badge" id="kit-status"></span></div><div class="body"><h3 class="kit-title" id="kit-title">Choose a course</h3><p class="kit-meta" id="kit-meta"></p><label class="sr" for="course-choice">Course for your notes</label><select class="course-choice" id="course-choice"></select><div class="kit-links"><a class="button" href="https://brightspace.uakron.edu/" target="_blank" rel="noopener noreferrer">Open Brightspace ↗</a><button class="button primary" id="kit-focus" type="button">Start 20-minute focus</button></div><p class="hint">Open the course in Brightspace for assigned reading and materials.</p><ul class="checklist" id="prep-checklist"></ul></div></section>
+<section class="panel"><div class="panel-head"><h2>Before class</h2><small>Saved on this device</small></div><div class="body reflection"><label for="prep-note">What do you want to ask or understand?</label><textarea id="prep-note" maxlength="10000" placeholder="A question, confusing point, or case to revisit…"></textarea><div class="storage-state" id="prep-state" role="status"></div></div></section>
+<section class="panel"><div class="panel-head"><h2>Recent focus</h2><small>On this device</small></div><div class="body" id="focus-history"></div></section>
+</div><aside class="col"><section class="panel"><div class="panel-head"><h2>Close the loop</h2><small id="reflection-day"></small></div><div class="body reflection"><label for="takeaway">One takeaway</label><textarea id="takeaway" maxlength="10000" placeholder="Explain the central idea in your own words…"></textarea><label for="open-question">One open question</label><textarea id="open-question" maxlength="10000" placeholder="What still needs clarification?"></textarea><label for="next-task">Your next step</label><textarea id="next-task" maxlength="10000" placeholder="A small, concrete thing to do next…"></textarea><div class="storage-state" id="reflection-state" role="status">Saved on this device for the selected course and day.</div><div class="actions" style="margin-top:15px"><button class="button" id="capture-next-task" type="button">Add next step to quick capture</button></div></div></section><section class="panel"><div class="panel-head"><h2>Earlier notes</h2></div><div class="body"><label class="sr" for="note-day">Notes date</label><select id="note-day" class="course-choice"></select><p class="hint">Your study notes stay in this browser. They are not sent to the assistant or published.</p><button class="button text" id="export-notes" type="button">Download my notes</button></div></section></aside></div></section>
+<section id="view-systems" role="tabpanel" aria-labelledby="tab-systems" hidden><div class="grid"><div class="col"><section class="panel"><div class="panel-head"><h2>What is actually running</h2><small>Evidence before labels</small></div><div class="body" id="system-status"></div></section><section class="panel"><div class="panel-head"><h2>Saved inbox note</h2><small>Live sync not connected</small></div><div class="body"><p class="note">{{INBOX_NOTE}}</p></div></section></div><aside class="col"><section class="panel"><div class="panel-head"><h2>How your day adapts</h2><small>While the page is open</small></div><div class="body"><div class="routine"><h3>Start your day</h3><p>See your next commitment, the week ahead, and unresolved items.</p></div><div class="routine"><h3>90 minutes before class</h3><p>Your next move becomes class prep, with notes and materials one click away.</p></div><div class="routine"><h3>After class</h3><p>A short reflection brings the takeaway, open question, and next step together.</p></div><div class="routine"><h3>Evening reset</h3><p>Review your loose ends and choose tomorrow’s first task.</p></div><p class="hint">These change the page automatically. They do not send background notifications.</p></div></section><section class="panel"><div class="panel-head"><h2>Appearance</h2></div><div class="body"><label for="theme">Theme</label><select id="theme" class="course-choice"><option value="chambers">Chambers · navy and brass</option><option value="night">Night desk · graphite and gold</option><option value="field">Field notes · sage and paper</option></select><p class="hint">Your choice stays on this device.</p></div></section></aside></div></section>
+<section id="view-later" role="tabpanel" aria-labelledby="tab-later" hidden><div class="later-grid" id="later"></div></section>
+</main><footer class="footer"><span>Updated <time id="built-at">{{BUILT_AT}}</time> · Akron time</span><span id="save-summary">Personal desk · public schedule, private local notes</span></footer>
 </div>
-<div class="view" id="v1"><div class="grid two">{{PENDING}}</div></div>
-</main><p class="foot">Updated {{BUILT_AT}} · {{TZ}}</p></div>
-<script>
-var TZ = {{TZ_JSON}};
-var DEADLINES = {{DEADLINES_JSON}};
-var NEXT_DUE = "{{NEXT_DUE_ISO}}";
-
-function tick(){
-  var now = new Date();
-  var c = document.getElementById('clock');
-  if(c){
-    c.textContent = now.toLocaleTimeString('en-US',
-      {timeZone:TZ, hour:'numeric', minute:'2-digit', hour12:true});
-  }
-  document.getElementById('topdate').textContent = now.toLocaleDateString('en-GB',{timeZone:TZ,weekday:'short',day:'numeric',month:'short',year:'numeric'});
-  var next = DEADLINES.find(function(x){return new Date(x.due) >= now;});
-  NEXT_DUE = next ? next.due : '';
-  var d = document.getElementById('cdown');
-  d.className = 'badge';
-  if(!next){d.textContent='CLEAR'; document.getElementById('nextline').textContent='Nothing ahead on the calendar.';}
-  else document.getElementById('nextline').textContent='Next up: '+next.title;
-
-  if(d && NEXT_DUE){
-    var mins = Math.floor((new Date(NEXT_DUE) - now) / 60000);
-    d.classList.toggle('hot',mins<60);
-    if(mins < 0){ d.textContent = 'NOW'; }
-    else if(mins < 60){ d.textContent = mins + ' MIN'; }
-    else if(mins < 1440){ d.textContent = Math.floor(mins/60) + 'H ' + ('0'+(mins%60)).slice(-2) + 'M'; }
-    else { d.textContent = Math.floor(mins/1440) + 'D ' + Math.floor((mins%1440)/60) + 'H'; }
-  }
-}
-tick();
-setInterval(tick, 30000);
-
-var ASK_ENDPOINT = {{ASK_ENDPOINT_JSON}};
-var input  = document.getElementById('ask');
-var stateEl= document.getElementById('askst');
-var thread = document.getElementById('thread');
-var convo = [];
-var busy = false;
-
-function pass(){
-  var p; try { p = sessionStorage.getItem('dashpass'); } catch(e) {}
-  if(!p){
-    p = window.prompt('Passphrase');
-    if(p) try { sessionStorage.setItem('dashpass', p); } catch(e) {}
-  }
-  return p;
-}
-
-function addTurn(q, a, cls){
-  var d = document.createElement('div');
-  d.className = 'turn';
-  var qp = document.createElement('p'); qp.className='q'; qp.textContent = '\u203A ' + q;
-  var ap = document.createElement('p'); ap.className='a' + (cls?' '+cls:''); ap.textContent = a;
-  d.appendChild(qp); d.appendChild(ap);
-  thread.insertBefore(d, thread.firstChild);
-  return d;
-}
-
-function scheduleReload(turnEl){
-  var note = document.createElement('p');
-  note.className = 'refresh';
-  var left = 100;
-  note.textContent = 'Page updates in about ' + left + 's';
-  turnEl.appendChild(note);
-  var iv = setInterval(function(){
-    left -= 10;
-    if(left <= 0){ clearInterval(iv); location.reload(); }
-    else note.textContent = 'Page updates in about ' + left + 's';
-  }, 10000);
-}
-
-async function ask(q){
-  if(busy || !ASK_ENDPOINT) return;
-  var p = pass();
-  if(!p){ return; }
-  busy = true; input.value = ''; stateEl.textContent = 'Thinking'; input.disabled = true;
-  try{
-    var r = await fetch(ASK_ENDPOINT, {
-      method:'POST',
-      headers:{'content-type':'application/json'},
-      signal: AbortSignal.timeout(90000),
-      body: JSON.stringify({ question:q, pass:p, history:convo })
-    });
-    var data = await r.json();
-    if(!r.ok){
-      if(r.status === 401){ try { sessionStorage.removeItem('dashpass'); } catch(e) {} }
-      var failedTurn = addTurn(q, data.error || ('error ' + r.status), 'err');
-      if(data.changed) scheduleReload(failedTurn);
-    } else {
-      var el = addTurn(q, data.answer, data.changed ? 'changed' : '');
-      if(data.changed){ scheduleReload(el); }
-      convo.push({role:'user', content:q});
-      convo.push({role:'assistant', content:data.answer});
-      if(convo.length > 10) convo = convo.slice(-10);
-    }
-  } catch(e){
-    addTurn(q, 'could not reach the endpoint', 'err');
-  }
-  busy = false; stateEl.textContent = 'Idle'; input.disabled = false; input.focus();
-}
-
-document.getElementById('askform').addEventListener('submit', function(e){
-  e.preventDefault(); var q = input.value.trim(); if(q && !busy) ask(q);
-});
-function pickLeague(id){
-  document.querySelectorAll('.league').forEach(function(b){var on=b.dataset.league===id;b.classList.toggle('sel',on);b.setAttribute('aria-pressed',String(on));});
-  document.querySelectorAll('[data-news-league]').forEach(function(p){p.hidden=p.dataset.newsLeague!==id;});
-}
-// Refresh an idle dashboard so a tab left open overnight receives its morning edition.
-setInterval(function(){if(!busy && !input.value && !convo.length) location.reload();}, 15*60*1000);
-
-function pick(i){
-  document.querySelectorAll('.tab').forEach(function(t,n){t.classList.toggle('sel',n===i);t.setAttribute('aria-pressed',String(n===i));});
-  document.querySelectorAll('.view').forEach(function(v,n){v.classList.toggle('sel',n===i);});
-}
-
-</script>
-</body>
-</html>
+<dialog id="pass-dialog"><form id="pass-form"><h2>Unlock your dashboard</h2><p>Your existing passphrase lets you ask the assistant and save dashboard changes.</p><label for="pass-input">Passphrase</label><input type="password" id="pass-input" autocomplete="current-password" required><div class="actions"><button type="submit" class="button primary">Continue</button><button type="button" class="button" id="pass-cancel">Cancel</button></div></form></dialog>
+<dialog id="share-dialog"><form id="share-form"><h2>Add to the dashboard</h2><p>This item will appear on your public dashboard. Keep private notes in Quick capture.</p><label for="share-title">Title</label><input id="share-title" maxlength="160" required><label for="share-body">Details</label><textarea id="share-body" maxlength="1000"></textarea><div class="actions"><button type="submit" class="button primary">Add to dashboard</button><button type="button" class="button" id="share-cancel">Keep private</button></div></form></dialog>
+<script>var TZ={{TZ_JSON}};var ASK_ENDPOINT={{ASK_ENDPOINT_JSON}};var DASHBOARD={{DASHBOARD_JSON}};var DEADLINES={{DEADLINES_JSON}};var NEXT_DUE="{{NEXT_DUE_ISO}}";</script>
+<script>{{CORE_JS}}</script><script>{{DASHBOARD_JS}}</script>
+</body></html>

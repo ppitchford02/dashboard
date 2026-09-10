@@ -119,6 +119,10 @@ export default {
   async fetch(request, env) {
     const origin = env.ALLOWED_ORIGIN || "*";
 
+    if (request.method === "GET" && new URL(request.url).pathname === "/health") {
+      return json({ ok: true, version: "daily-desk-1", actions: true }, 200, origin);
+    }
+
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: cors(origin) });
     }
@@ -137,8 +141,9 @@ export default {
     const question = String(body.question || "").trim();
     const pass = String(body.pass || "");
     const history = Array.isArray(body.history) ? body.history.slice(-10) : [];
+    const action = body.action;
 
-    if (!question) return json({ error: "empty question" }, 400, origin);
+    if (!question && !action) return json({ error: "empty question" }, 400, origin);
     if (question.length > MAX_QUESTION) return json({ error: "too long" }, 400, origin);
 
     if (!env.DASH_PASSPHRASE || pass !== env.DASH_PASSPHRASE) {
@@ -151,6 +156,14 @@ export default {
 
     // ---- current dashboard data ---------------------------------------
     const gh = new Repo(env);
+    if (action) {
+      try {
+        return json(await runDashboardAction(action, gh), 200, origin);
+      } catch (error) {
+        const known = error instanceof ActionError;
+        return json({ error: known ? error.message : "Could not save the change. Refresh and retry.", changed: false }, known ? error.status : 502, origin);
+      }
+    }
     let dashFile = null;
     try {
       dashFile = await gh.read("data.json");
@@ -312,7 +325,7 @@ export async function runTool(name, input, gh) {
     const validDate = (value) => {
       if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return false;
       const dt = new Date(value + 'Z');
-      return !isNaN(dt) && dt.toISOString().slice(0,16) === value;
+      return !Number.isNaN(dt.getTime()) && dt.toISOString().slice(0,16) === value;
     };
     if (!validDate(input.due)) throw new Error('Invalid due date; use YYYY-MM-DDTHH:MM');
     if (input.end && (!validDate(input.end) || input.end <= input.due)) throw new Error('End must be after start');
@@ -433,8 +446,67 @@ class Repo {
       body: JSON.stringify({ message, content, sha, branch: this.branch }),
     });
     if (!r.ok) throw new Error(`github write ${r.status}: ${(await r.text()).slice(0, 200)}`);
-    return true;
+    const saved = await r.json();
+    return { commit_url: saved.commit?.html_url || null, commit_sha: saved.commit?.sha || null };
   }
+}
+
+class ActionError extends Error {
+  constructor(message, status = 400) { super(message); this.status = status; }
+}
+
+function stable(value) {
+  if (Array.isArray(value)) return value.map(stable);
+  if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map(key => [key, stable(value[key])]));
+  return value;
+}
+
+function sameItem(a, b) { return JSON.stringify(stable(a)) === JSON.stringify(stable(b)); }
+
+function validateAttention(item) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) throw new ActionError("Choose an attention item.");
+  if (typeof item.title !== "string" || !item.title.trim() || item.title.length > 160) throw new ActionError("Use a title between 1 and 160 characters.");
+  if (typeof item.body !== "string" || item.body.length > 2000) throw new ActionError("Keep the details under 2,000 characters.");
+  if (item.when !== undefined && (typeof item.when !== "string" || item.when.length > 200)) throw new ActionError("Invalid time label.");
+  if (item.level !== undefined && !["low", "med", "high"].includes(item.level)) throw new ActionError("Invalid attention level.");
+  if (item.id !== undefined && (typeof item.id !== "string" || item.id.length > 80)) throw new ActionError("Invalid item identifier.");
+  if (item.related_deadlines !== undefined && (!Array.isArray(item.related_deadlines) || item.related_deadlines.length > 20 || item.related_deadlines.some(x => typeof x !== "string" || x.length > 200))) throw new ActionError("Invalid linked deadlines.");
+  if (item.due !== undefined && (typeof item.due !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(item.due) || isNaN(Date.parse(item.due)))) throw new ActionError("Invalid due date.");
+  const allowed = new Set(["id", "title", "body", "when", "level", "related_deadlines", "due"]);
+  if (Object.keys(item).some(key => !allowed.has(key))) throw new ActionError("Unsupported attention item fields.");
+}
+
+export async function runDashboardAction(action, gh) {
+  if (!action || typeof action !== "object" || Array.isArray(action) || !["add_attention", "complete_attention", "restore_attention"].includes(action.name)) throw new ActionError("Unsupported dashboard action.");
+  validateAttention(action.item);
+  const file = await gh.read("data.json");
+  const data = file.data;
+  if (!Array.isArray(data.attention)) throw new ActionError("Attention data needs repair before editing.", 409);
+  let undo, message;
+  if (action.name === "add_attention") {
+    if (data.attention.some(x => String(x.title).trim().toLowerCase() === action.item.title.trim().toLowerCase())) throw new ActionError("An item with that title already exists.", 409);
+    const item = { id: crypto.randomUUID(), title: action.item.title.trim(), body: action.item.body.trim(), when: action.item.when || "", level: action.item.level || "low" };
+    if (action.item.related_deadlines) item.related_deadlines = action.item.related_deadlines;
+    if (action.item.due) item.due = action.item.due;
+    data.attention.unshift(item);
+    undo = { name: "complete_attention", item };
+    message = `Added “${item.title}” to the dashboard.`;
+  } else if (action.name === "complete_attention") {
+    const index = data.attention.findIndex(x => sameItem(x, action.item));
+    if (index < 0) throw new ActionError("This item changed or was already cleared. Refresh before trying again.", 409);
+    const [item] = data.attention.splice(index, 1);
+    undo = { name: "restore_attention", item, index };
+    message = `Cleared “${item.title}”.`;
+  } else {
+    if (!Number.isInteger(action.index) || action.index < 0) throw new ActionError("Invalid restore position.");
+    if (data.attention.some(x => sameItem(x, action.item) || (action.item.id && x.id === action.item.id) || x.title === action.item.title)) throw new ActionError("An item with that title already exists. Refresh to see it.", 409);
+    const item = structuredClone(action.item);
+    data.attention.splice(Math.min(action.index, data.attention.length), 0, item);
+    undo = { name: "complete_attention", item };
+    message = `Restored “${item.title}”.`;
+  }
+  const saved = await gh.write("data.json", data, file.sha, message);
+  return { ok: true, changed: true, message, undo, attention: data.attention, commit_url: saved?.commit_url || null };
 }
 
 function decodeB64(s) {

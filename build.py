@@ -9,6 +9,8 @@ Standard library only. No pip install needed.
 """
 
 import json
+import re
+from news import news_block
 import sys
 import html
 import math
@@ -28,7 +30,7 @@ WEATHER_TIMEOUT = 6  # seconds; falls back to data.json on failure
 # ----------------------------------------------------------------- helpers
 
 def esc(s):
-    return html.escape(str(s), quote=False)
+    return html.escape(str(s), quote=True)
 
 
 def parse_dt(s):
@@ -133,24 +135,6 @@ def agent_rows(agents):
     return "\n".join(out)
 
 
-def course_rows(courses):
-    return "\n".join(
-        f'        <div class="row"><span class="name">{esc(c["name"])}</span>'
-        f'<span class="meta">{esc(c["meta"])}</span></div>'
-        for c in courses
-    )
-
-
-def last_run_rows(runs):
-    if not runs:
-        return '        <p class="note">No runs recorded yet.</p>'
-    return "\n".join(
-        f'        <div class="row"><span class="name">{esc(r["name"])}</span>'
-        f'<span class="meta">{esc(r["at"])}</span></div>'
-        for r in runs
-    )
-
-
 def attention_items(items):
     if not items:
         return ('      <div class="body"><p class="note">Nothing is waiting on you '
@@ -158,6 +142,7 @@ def attention_items(items):
     out = []
     for it in items:
         lvl = it.get("level", "low")
+        if lvl not in ("high", "med", "low"): lvl = "low"
         bar = "" if lvl == "high" else f" {lvl}"
         out.append(
             f'      <div class="att">\n'
@@ -174,7 +159,7 @@ def attention_items(items):
 
 def schedule_block(deadlines, now):
     """Group upcoming items by day. Past items are dropped."""
-    future = [d for d in deadlines if parse_dt(d["due"]) >= now.replace(second=0, microsecond=0)]
+    future = [d for d in deadlines if parse_dt(d["due"]) >= now]
     future.sort(key=lambda d: d["due"])
     if not future:
         return '        <p class="note">Nothing scheduled ahead.</p>', "CLEAR", "mute"
@@ -190,7 +175,7 @@ def schedule_block(deadlines, now):
         items = by_day[day]
         base, tag = day_label(day, today)
         pts = sum(i.get("points", 0) for i in items)
-        right = tag or (f"{pts} PTS DUE" if pts else "CLASS NIGHT")
+        right = tag or (f"{pts} PTS DUE" if pts else "SCHEDULED")
         out.append(f'        <div class="daysep">{esc(base)}'
                    f'<span class="r">{esc(right)}</span></div>')
         for i in items:
@@ -222,81 +207,6 @@ def countdown(delta):
         return f"{int(hours)}H {mins % 60:02d}M", "warn"
     days = int(hours // 24)
     return f"{days}D {int(hours % 24)}H", ""
-
-
-def terrain_svg(deadlines, now):
-    """Draw today's committed time as a hill. Axis runs 06:00 to 24:00."""
-    W, H, BASE, PEAK = 640, 130, 102, 26
-    today = now.date()
-    pts = []
-    for d in deadlines:
-        dt = parse_dt(d["due"])
-        if dt.date() == today:
-            pts.append(dt)
-    if not pts:
-        path = f'M0 {BASE} L{W} {BASE}'
-        dots = ''
-        return (f'        <svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" '
-                f'role="img" aria-label="Nothing committed today.">\n'
-                f'          <path d="{path}" fill="none" stroke="#C9BFA6" '
-                f'stroke-width="1.5" stroke-linecap="round"/>\n        </svg>')
-
-    def x_of(dt):
-        h = dt.hour + dt.minute / 60
-        h = max(6.0, min(24.0, h))
-        return (h - 6) / 18 * W
-
-    centre = sum(x_of(p) for p in pts) / len(pts)
-    centre = max(W * 0.14, min(W * 0.86, centre))  # keep the peak in frame
-    spread = max(70, W * 0.14)
-
-    def y_of(x):
-        return BASE - (BASE - PEAK) * math.exp(-((x - centre) ** 2) / (2 * spread ** 2))
-
-    step = 8
-    coords = [(x, y_of(x)) for x in range(0, W + step, step)]
-    path = "M" + " L".join(f"{x} {y:.1f}" for x, y in coords)
-
-    dots = []
-    for p in sorted(pts):
-        x = x_of(p)
-        dots.append(f'          <circle cx="{x:.0f}" cy="{y_of(x):.1f}" r="5.5" fill="#A8842C"/>')
-    nx = x_of(now)
-    dots.append(f'          <line x1="{nx:.0f}" y1="14" x2="{nx:.0f}" y2="{BASE + 12}" '
-                f'stroke="#96341F" stroke-width="1" stroke-dasharray="2 4" opacity=".7"/>')
-
-    return (f'        <svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" '
-            f'role="img" aria-label="Today\'s committed time, drawn as terrain.">\n'
-            f'          <path d="{path}" fill="none" stroke="#16274A" stroke-width="1.8" '
-            f'stroke-linecap="round" opacity=".9"/>\n'
-            + "\n".join(dots) + "\n        </svg>")
-
-
-def acts_block(deadlines, now):
-    today = now.date()
-    buckets = {"MORNING": [], "AFTERNOON": [], "EVENING": []}
-    for d in deadlines:
-        dt = parse_dt(d["due"])
-        if dt.date() != today:
-            continue
-        if dt.hour < 12:
-            buckets["MORNING"].append(dt)
-        elif dt.hour < 17:
-            buckets["AFTERNOON"].append(dt)
-        else:
-            buckets["EVENING"].append(dt)
-
-    out = []
-    for label, items in buckets.items():
-        if not items:
-            txt = "Nothing committed."
-        elif len(items) == 1:
-            txt = f"One item, at {fmt_time(items[0])}."
-        else:
-            txt = (f"{len(items)} items, {fmt_time(min(items))} "
-                   f"to {fmt_time(max(items))}.")
-        out.append(f'        <div class="act"><span class="t">{label}</span>{txt}</div>')
-    return "\n".join(out)
 
 
 def pending_block(items):
@@ -395,17 +305,22 @@ def main():
     else:
         next_due_iso = ""
 
-    # dial arc reflects how much of the day is gone
-    frac = min(1.0, max(0.0, (now.hour * 60 + now.minute) / (24 * 60)))
-    circ = 2 * math.pi * 52
-    dash = f"{circ * frac:.0f} {circ * (1 - frac):.0f}"
+    def js(value):
+        return json.dumps(value, ensure_ascii=True).replace('<', '\\u003c')
 
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo(cfg.get('timezone', 'America/New_York'))
+    live_deadlines = [dict(title=d['title'], due=parse_dt(d['due']).replace(tzinfo=tz).isoformat()) for d in sorted(deadlines, key=lambda d:d['due'])]
     repl = {
+        "{{NEWS}}": news_block(now, write=not check),
+        "{{TZ_JSON}}": js(cfg.get('timezone', 'America/New_York')),
+        "{{ASK_ENDPOINT_JSON}}": js(cfg.get('ask_endpoint', '')),
+        "{{DEADLINES_JSON}}": js(live_deadlines),
         "{{TOPBAR_DATE}}": now.strftime("%a %d %b %Y").upper(),
         "{{TOPBAR_TIME}}": now.strftime("%H:%M"),
-        "{{LOC}}": cfg["location"]["name"].upper(),
-        "{{WX_NOW}}": wx_now,
-        "{{WX_BADGE}}": wx_badge,
+        "{{LOC}}": esc(cfg["location"]["name"].upper()),
+        "{{WX_NOW}}": esc(wx_now),
+        "{{WX_BADGE}}": esc(wx_badge),
         "{{WX_ROWS}}": wx_rows.rstrip("\n"),
         "{{COUNTDOWN}}": sch_badge,
         "{{COUNTDOWN_CLASS}}": sch_cls,
@@ -413,24 +328,15 @@ def main():
         "{{ATT_BADGE_CLASS}}": "hot" if any(a.get("level") == "high" for a in att) else "warn",
         "{{AGENTS_ONLINE}}": f"{online}/{total}",
         "{{AGENTS_ONLINE_LONG}}": f"{online} ONLINE",
-        "{{LIVE_COUNT}}": "9",
         "{{PEND_COUNT}}": str(len(cfg["pending"])),
         "{{AGENT_ROWS}}": agent_rows(cfg["agents"]),
-        "{{PTS_OPEN}}": f"{future_pts} PTS OPEN" if future_pts else "CLEAR",
-        "{{COURSE_ROWS}}": course_rows(cfg["courses"]),
-        "{{DIAL_DASH}}": dash,
         "{{GREETING}}": greeting(now, cfg["name"], deadlines),
         "{{SUBLINE}}": subline(deadlines, now),
-        "{{DAY_BADGE}}": (f"{len(today_items)} TODAY" if today_items else "CLEAR"),
-        "{{TERRAIN}}": terrain_svg(deadlines, now),
-        "{{ACTS}}": acts_block(deadlines, now),
         "{{ATT_ITEMS}}": attention_items(att),
         "{{SCHEDULE}}": sched,
         "{{SCH_BADGE}}": sch_badge,
         "{{SCH_BADGE_CLASS}}": sch_cls,
         "{{INBOX_NOTE}}": esc(cfg.get("inbox_note", "")),
-        "{{LAST_RUNS}}": last_run_rows(cfg.get("last_runs", [])),
-        "{{LAST_RUN_AT}}": (cfg["last_runs"][0]["at"] if cfg.get("last_runs") else "\u2014"),
         "{{PENDING}}": pending_block(cfg["pending"]),
         "{{BUILT_AT}}": now.strftime("%d %b %Y %H:%M").upper(),
         "{{TZ}}": cfg.get("timezone", "America/New_York"),
@@ -440,15 +346,7 @@ def main():
         "{{NEXT_DUE_ISO}}": next_due_iso,
     }
 
-    out = tpl
-    for k, v in repl.items():
-        out = out.replace(k, v)
-
-    leftover = [t for t in ("{{",) if t in out]
-    if leftover:
-        import re
-        names = set(re.findall(r"\{\{[A-Z_]+\}\}", out))
-        print(f"  WARNING unfilled tokens: {', '.join(sorted(names))}", file=sys.stderr)
+    out = re.sub(r"\{\{[A-Z_]+\}\}", lambda m: repl[m.group(0)], tpl)
 
     if check:
         print(f"  ok, {len(out)} bytes (not written)")

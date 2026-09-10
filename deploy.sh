@@ -10,12 +10,12 @@ cd "$(dirname "$0")"
 
 python3 build.py
 
-if git diff --quiet -- index.html; then
+if git diff --quiet -- index.html news.json; then
   echo "no change, nothing to publish"
   exit 0
 fi
 
-git add index.html
+git add index.html news.json
 git commit -q -m "Dashboard $(date '+%Y-%m-%d %H:%M')"
 git push -q origin main
 echo "published. live in a minute or two at:"

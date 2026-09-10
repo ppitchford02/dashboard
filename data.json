@@ -39,14 +39,14 @@
   "courses": [
     {
       "name": "Lawyering Analysis & Research",
-      "meta": "TUE/THU 18:30 \u00b7 RM 281"
+      "meta": "TUE/THU 18:30 · RM 281"
     },
     {
       "name": "Lawyering Analysis & Writing",
       "meta": "ASYNC"
     },
     {
-      "name": "Civil Procedure \u2014 Fed. Juris.",
+      "name": "Civil Procedure — Fed. Juris.",
       "meta": "ASYNC"
     }
   ],
@@ -57,7 +57,7 @@
       "due": "2026-09-09T23:59",
       "points": 30,
       "course": "LAWX 730",
-      "note": "30 pts \u00b7 Word \u00b7 Bluebook",
+      "note": "30 pts · Word · Bluebook",
       "kind": "deadline"
     },
     {
@@ -65,7 +65,7 @@
       "due": "2026-09-09T23:59",
       "points": 30,
       "course": "LAWX 730",
-      "note": "30 pts \u00b7 Word \u00b7 Bluebook",
+      "note": "30 pts · Word · Bluebook",
       "kind": "deadline"
     },
     {
@@ -73,11 +73,18 @@
       "due": "2026-09-10T18:30",
       "end": "2026-09-10T20:00",
       "course": "LAWX 730",
-      "note": "Room 281 \u00b7 per course schedule",
+      "note": "Room 281 · per course schedule",
       "kind": "class"
     }
   ],
   "attention": [
+    {
+      "id": "37a5c4ed-0ff4-418b-a004-f5be83a8a313",
+      "title": "Temporary dashboard verification — safe to clear",
+      "body": "",
+      "when": "",
+      "level": "low"
+    },
     {
       "title": "Class 6 problem sets",
       "body": "Both belong to Class 6, thirty points each. Word rather than PDF, Bluebook citations even where the question does not ask, honor pledge typed out.",
@@ -164,11 +171,11 @@
       },
       {
         "label": "Wed",
-        "meta": "87 \u00b7 35% RAIN"
+        "meta": "87 · 35% RAIN"
       },
       {
         "label": "Thu",
-        "meta": "78 \u00b7 20% RAIN"
+        "meta": "78 · 20% RAIN"
       }
     ]
   }

@@ -39,8 +39,16 @@ def parse_dt(s):
 
 
 def fmt_time(dt):
-    h = dt.strftime("%H:%M")
-    return h
+    return dt.strftime("%I:%M %p").lstrip("0")
+
+
+def display_times(text):
+    """Format clock times in display labels without changing stored data."""
+    return re.sub(
+        r"\b([01]?\d|2[0-3]):([0-5]\d)\b(?!\s*[AP]M\b)",
+        lambda m: fmt_time(datetime.strptime(m.group(0), "%H:%M")),
+        str(text), flags=re.IGNORECASE,
+    )
 
 
 def day_label(d, today):
@@ -130,7 +138,7 @@ def agent_rows(agents):
         out.append(
             f'        <div class="row"><span class="dot {cls}"></span>'
             f'<span class="name">{esc(a["name"])}</span>'
-            f'<span class="meta">{esc(a["schedule"])}</span></div>'
+            f'<span class="meta">{esc(display_times(a["schedule"]))}</span></div>'
         )
     return "\n".join(out)
 
@@ -150,7 +158,7 @@ def attention_items(items):
             f'        <div>\n'
             f'          <p class="ttl">{esc(it["title"])}</p>\n'
             f'          <p>{esc(it["body"])}</p>\n'
-            f'          <span class="when">{esc(it.get("when",""))}</span>\n'
+            f'          <span class="when">{esc(display_times(it.get("when","")))}</span>\n'
             f'        </div>\n'
             f'      </div>'
         )
@@ -317,7 +325,7 @@ def main():
         "{{ASK_ENDPOINT_JSON}}": js(cfg.get('ask_endpoint', '')),
         "{{DEADLINES_JSON}}": js(live_deadlines),
         "{{TOPBAR_DATE}}": now.strftime("%a %d %b %Y").upper(),
-        "{{TOPBAR_TIME}}": now.strftime("%H:%M"),
+        "{{TOPBAR_TIME}}": fmt_time(now),
         "{{LOC}}": esc(cfg["location"]["name"].upper()),
         "{{WX_NOW}}": esc(wx_now),
         "{{WX_BADGE}}": esc(wx_badge),
@@ -338,7 +346,7 @@ def main():
         "{{SCH_BADGE_CLASS}}": sch_cls,
         "{{INBOX_NOTE}}": esc(cfg.get("inbox_note", "")),
         "{{PENDING}}": pending_block(cfg["pending"]),
-        "{{BUILT_AT}}": now.strftime("%d %b %Y %H:%M").upper(),
+        "{{BUILT_AT}}": now.strftime("%d %b %Y").upper() + " " + fmt_time(now),
         "{{TZ}}": cfg.get("timezone", "America/New_York"),
         "{{ASK_ENDPOINT}}": cfg.get("ask_endpoint", ""),
         "{{ASK_DISABLED}}": "" if cfg.get("ask_endpoint") else "disabled",

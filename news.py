@@ -76,7 +76,9 @@ def render_feed(entry, edition):
     if not entry or not entry.get('items'):
         return '<p class="note">Headlines temporarily unavailable. We’ll retry on the next refresh.</p>'
     stamp = entry.get('fetched_at', '')
-    try: stamp = datetime.fromisoformat(stamp).strftime('%b %d · %H:%M')
+    try:
+        fetched = datetime.fromisoformat(stamp)
+        stamp = fetched.strftime('%b %d · ') + fetched.strftime('%I:%M %p').lstrip('0')
     except ValueError: stamp = 'Unknown'
     prefix = 'Updated ' if entry.get('edition') == edition else 'Previous edition · '
     out = [f'<p class="edition">{prefix}{esc(stamp)}</p>']

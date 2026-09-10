@@ -357,7 +357,14 @@ def main():
     check = "--check" in sys.argv
     cfg = json.loads(DATA.read_text())
     tpl = TEMPLATE.read_text()
-    now = datetime.now()
+
+    # "now" in the dashboard's own timezone, wherever this runs.
+    # GitHub's runners are UTC; without this, evenings roll into tomorrow.
+    try:
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo(cfg.get("timezone", "America/New_York"))).replace(tzinfo=None)
+    except Exception:
+        now = datetime.now()
 
     print("building dashboard...")
 

@@ -59,6 +59,267 @@
       "course": "LAWX 730",
       "note": "Room 281 \u00b7 per course schedule",
       "kind": "class"
+    },
+    {
+      "title": "Memo I",
+      "due": "2026-09-14T03:59:59+00:00",
+      "course": "Lawyering Analysis and Writing I",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4875804:dropbox:768069"
+    },
+    {
+      "title": "Cases Part 2 Problem Set",
+      "due": "2026-09-12T03:59:59+00:00",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4875802:dropbox:765439"
+    },
+    {
+      "title": "Cumulative Self-Edit Checklist (Principles 1-4)",
+      "due": "2026-09-14T03:59:59+00:00",
+      "course": "Lawyering Analysis and Writing I",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4875804:dropbox:786913"
+    },
+    {
+      "title": "Citators Problem Set",
+      "due": "2026-09-17T03:59:00+00:00",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4875802:dropbox:765440"
+    },
+    {
+      "title": "Self-Evaluation 4",
+      "due": "2026-09-17T22:30:00+00:00",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "quiz",
+      "source": "law-plan",
+      "source_id": "4875802:quiz:728843"
+    },
+    {
+      "title": "Pre-Class Legal Analysis Assignment (Contract Formation)",
+      "due": "2026-09-22T22:30:00+00:00",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4875802:dropbox:765445"
+    },
+    {
+      "title": "Pre-Class Legal Analysis Assignment (Waiver and Removal)",
+      "due": "2026-09-24T22:30:00+00:00",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4875802:dropbox:765443"
+    },
+    {
+      "title": "State Statutes Problem Set",
+      "due": "2026-09-19T03:59:00+00:00",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4875802:dropbox:765441"
+    },
+    {
+      "title": "Research Planning Problem Set",
+      "due": "2026-09-24T03:59:00+00:00",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4875802:dropbox:765442"
+    },
+    {
+      "title": "Citators Quiz",
+      "due": "2026-09-15T22:30:00+00:00",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "quiz",
+      "source": "law-plan",
+      "source_id": "4875802:quiz:728826"
+    },
+    {
+      "title": "State Statutes Quiz",
+      "due": "2026-09-17T22:30:00+00:00",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "quiz",
+      "source": "law-plan",
+      "source_id": "4875802:quiz:728828"
+    },
+    {
+      "title": "Research Planning Quiz",
+      "due": "2026-09-22T22:30:00+00:00",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "quiz",
+      "source": "law-plan",
+      "source_id": "4875802:quiz:728827"
+    },
+    {
+      "title": "Pre-Class Hierarchy Review",
+      "due": "2026-09-24T22:30:00+00:00",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "quiz",
+      "source": "law-plan",
+      "source_id": "4875802:quiz:728829"
+    },
+    {
+      "title": "Self-Evaluation 5",
+      "due": "2026-09-24T22:30:00+00:00",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "quiz",
+      "source": "law-plan",
+      "source_id": "4875802:quiz:728844"
+    },
+    {
+      "title": "Pre-Class Legal Analysis Assignment (Shopkeeper's Privilege)",
+      "due": "2026-09-29T22:30:00+00:00",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4875802:dropbox:765451"
+    },
+    {
+      "title": "Pre-Class Legal Analysis Assignment (Dog Bite)",
+      "due": "2026-10-01T22:30:00+00:00",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4875802:dropbox:765447"
+    },
+    {
+      "title": "Case File Practice Problem Set (Class 11)",
+      "due": "2026-09-26T03:59:00+00:00",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4875802:dropbox:765444"
+    },
+    {
+      "title": "Case File Practice Problem Set (Class 12)",
+      "due": "2026-10-01T03:59:00+00:00",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4875802:dropbox:765446"
+    },
+    {
+      "title": "Week Five Quiz",
+      "due": "2026-09-21T03:59:59+00:00",
+      "course": "Lawyering Analysis and Writing I",
+      "kind": "deadline",
+      "note": "quiz",
+      "source": "law-plan",
+      "source_id": "4875804:quiz:747370"
+    },
+    {
+      "title": "Pre-Class Selecting the Best Cases",
+      "due": "2026-10-01T22:30:00+00:00",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "quiz",
+      "source": "law-plan",
+      "source_id": "4875802:quiz:728839"
+    },
+    {
+      "title": "Self-Evaluation 6",
+      "due": "2026-10-01T22:30:00+00:00",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "quiz",
+      "source": "law-plan",
+      "source_id": "4875802:quiz:728845"
+    },
+    {
+      "title": "Additional Practice Problem: Essay on Federal Question Jurisdiction",
+      "due": "2026-09-14T03:59:59+00:00",
+      "course": "Civil Procedure - Federal Jurisdiction",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4863882:dropbox:763753"
+    },
+    {
+      "title": "Outline of Federal Question Jurisdiction",
+      "due": "2026-09-14T03:59:59+00:00",
+      "course": "Civil Procedure - Federal Jurisdiction",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4863882:dropbox:763758"
+    },
+    {
+      "title": "Question Presented and Brief Answer",
+      "due": "2026-09-21T03:59:59+00:00",
+      "course": "Lawyering Analysis and Writing I",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4875804:dropbox:787388"
+    },
+    {
+      "title": "Revision Log 3",
+      "due": "2026-09-21T03:59:59+00:00",
+      "course": "Lawyering Analysis and Writing I",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4875804:dropbox:787387"
+    },
+    {
+      "title": "Week 6 Quiz",
+      "due": "2026-09-28T03:59:59+00:00",
+      "course": "Lawyering Analysis and Writing I",
+      "kind": "deadline",
+      "note": "quiz",
+      "source": "law-plan",
+      "source_id": "4875804:quiz:747371"
+    },
+    {
+      "title": "Research Plan Worksheet",
+      "due": "2026-09-28T03:59:59+00:00",
+      "course": "Lawyering Analysis and Writing I",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4875804:dropbox:787390"
+    },
+    {
+      "title": "Revision Log 4",
+      "due": "2026-09-28T03:59:59+00:00",
+      "course": "Lawyering Analysis and Writing I",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4875804:dropbox:787391"
+    },
+    {
+      "title": "Stream of Commerce and Intentional Torts",
+      "due": "2026-09-28T03:59:59+00:00",
+      "course": "Civil Procedure - Federal Jurisdiction",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4863882:dropbox:771574"
     }
   ],
   "attention": [],
@@ -148,6 +409,8 @@
   },
   "law_school_status": {
     "last_successful_capture": "2026-09-11T12:41:07-04:00",
+    "deadline_source": "law plan",
+    "deadline_count": 29,
     "schedule_timezone": "America/New_York",
     "schedule": [
       "09:00",
@@ -155,7 +418,7 @@
       "18:00"
     ],
     "deadline_collection": "Brightspace collection is implemented. This timestamp records its last successful capture.",
-    "dashboard_scope": "The dashboard reading queue is not connected to live law plan output. Do not interpret this as the agent lacking deadline collection.",
+    "dashboard_scope": "Assignment deadlines are synchronized from law plan after scheduled operations, with a 21-day forward horizon. Undiscovered or undated lecture surveys are not covered; this is not proof all coursework is listed.",
     "freshness_rule": "Use the full capture date and timezone. A scheduled time is not evidence a run happened. Never infer yesterday from an undated last_runs time."
   }
 }

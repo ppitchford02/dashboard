@@ -53,14 +53,6 @@
   "_comment_deadlines": "due is ISO local time. points optional. kind: deadline | class",
   "deadlines": [
     {
-      "title": "Case Law Pt 1 Problem Set 1",
-      "due": "2026-09-09T23:59",
-      "points": 30,
-      "course": "LAWX 730",
-      "note": "30 pts · Word · Bluebook",
-      "kind": "deadline"
-    },
-    {
       "title": "Class 7",
       "due": "2026-09-10T18:30",
       "end": "2026-09-10T20:00",

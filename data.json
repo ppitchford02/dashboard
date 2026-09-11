@@ -67,6 +67,14 @@
       "course": "LAWX 730",
       "note": "Room 281 · per course schedule",
       "kind": "class"
+    },
+    {
+      "title": "Case Law Pt 1 Problem Set 2",
+      "due": "2026-09-11T23:59",
+      "kind": "deadline",
+      "points": 30,
+      "course": "LAWX 730",
+      "note": "30 pts · Word · Bluebook"
     }
   ],
   "attention": [],

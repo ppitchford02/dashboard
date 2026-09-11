@@ -88,6 +88,15 @@
       "source_id": "4875804:dropbox:786913"
     },
     {
+      "title": "Citators Quiz",
+      "due": "2026-09-15T18:30",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "quiz",
+      "source": "law-plan",
+      "source_id": "4875802:quiz:728826"
+    },
+    {
       "title": "Citators Problem Set",
       "due": "2026-09-16T23:59",
       "course": "Lawyering Analysis and Research",
@@ -140,15 +149,6 @@
       "note": "dropbox",
       "source": "law-plan",
       "source_id": "4875802:dropbox:765442"
-    },
-    {
-      "title": "Citators Quiz",
-      "due": "2026-09-15T18:30",
-      "course": "Lawyering Analysis and Research",
-      "kind": "deadline",
-      "note": "quiz",
-      "source": "law-plan",
-      "source_id": "4875802:quiz:728826"
     },
     {
       "title": "State Statutes Quiz",

@@ -87,5 +87,5 @@
   window.PitchfordPicks.init(payload=>request(payload,'/picks'));
   tick();renderWeek();renderAgenda();renderAttention();renderCaptures();renderKit();renderNotes();renderHistory();renderSystems();renderLater();paintTimer();chooseView('today');
   setInterval(paintTimer,1000);setInterval(()=>{const before=C.dayKey(new Date(Date.now()-30000),TZ),after=C.dayKey(new Date(),TZ);tick();renderAttention();if(before!==after){selectedDay=after;renderWeek();}renderAgenda();},30000);
-  setInterval(()=>{const typing=document.activeElement?.matches('input,textarea,select');if(view!=='picks'&&!busy&&!typing&&!$('ask').value&&!convo.length&&!timer.active&&!$('pass-dialog').open&&!$('share-dialog').open)location.reload();},15*60000);
+  setInterval(()=>{const typing=document.activeElement?.matches('input,textarea,select');if(view!=='picks'&&!busy&&!typing&&!$('ask').value&&!convo.length&&!timer.active&&!$('pass-dialog').open&&!$('share-dialog').open&&!$('planner-dialog').open)location.reload();},15*60000);
 })();

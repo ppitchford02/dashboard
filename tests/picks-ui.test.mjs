@@ -41,6 +41,7 @@ class Element {
     listeners.push(listener);
     this.listeners.set(type, listeners);
   }
+  setAttribute(name, value) { this[name] = String(value); }
   async fire(type) {
     const event = { target: this, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
     for (const listener of this.listeners.get(type) || []) await listener.call(this, event);
@@ -81,7 +82,6 @@ function harness(api) {
   get('pick-form').reset = () => {
     for (const field of fields.values()) { field.value = ''; field.checked = false; }
   };
-  get('picks-source').value = 'all';
   get('picks-sport').value = 'all';
   get('picks-view').value = 'all';
   const document = {
@@ -117,6 +117,25 @@ function pick(overrides = {}) {
 }
 
 const desk = (picks = []) => ({ picks, checks: [], revisions: [] });
+
+test('renders exactly six source tabs and collapses matching picks into one credited card', async () => {
+  const randy = pick({ id: 'sbd-randy', sourceId: 'sbd', selection: 'Randy Arozarena — 1+ home run' });
+  const sameRandy = pick({ id: 'bat-randy', sourceId: 'bat', selection: 'Randy Arozarena — home run', odds: 400 });
+  const ui = harness(async body => {
+    assert.equal(body.action, 'read');
+    return desk([randy, sameRandy]);
+  });
+  await ui.get('picks-unlock').fire('click');
+  const tabs = ui.get('picks-source-tabs').children;
+  assert.equal(tabs.length, 6);
+  assert.deepEqual(tabs.map(tab => tab.dataset.source), ['danny', 'stunad', 'nick', 'cru', 'sbd', 'bat']);
+  assert.match(tabs[4].textContent, /SportsDime \(1\)/);
+  assert.match(tabs[5].textContent, /MLB Bat Guy \(0\)/);
+  assert.equal(ui.get('picks-list').children.length, 1);
+  assert.match(ui.get('picks-list').textContent, /Randy Arozarena/);
+  assert.match(ui.get('picks-list').textContent, /SportsDime evidence/);
+  assert.match(ui.get('picks-list').textContent, /MLB Bat Guy evidence/);
+});
 
 test('capture rejects malformed odds before any API request and preserves the form', async () => {
   let calls = 0;

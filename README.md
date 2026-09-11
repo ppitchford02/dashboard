@@ -28,7 +28,7 @@ Systems shows the actual publishing run and distinguishes configured agent
 statuses from verified execution. No new background messages or notifications
 are scheduled; the daily routines adapt the open page.
 
-Front-end sources are `dashboard.css`, `dashboard-core.js`, and `dashboard.js`.
+Front-end sources are `dashboard.css`, `dashboard-core.js`, `picks.js`, and `dashboard.js`.
 The renderer embeds them in the page. Run `node --test tests/*.test.mjs` and
 `python3 -m unittest discover -s tests` before publication. The Worker provides
 `GET /health` with its non-secret version and accepts authenticated POST actions
@@ -48,7 +48,9 @@ Live dashboard: https://ppitchford02.github.io/dashboard/
 - `news.py`: publisher RSS fetch, daily edition cache, safe headline rendering.
 - `news.json`: last successfully fetched edition for each feed.
 - `index.html`: generated page; edit the template instead.
-- `worker.js`: separately deployed Cloudflare assistant endpoint.
+- `worker.js`: separately deployed Cloudflare assistant and private picks endpoint.
+- `picks.js`: native Sports Picks tab, evidence, filters, and record tracking.
+- `schema-picks.sql`: private D1 picks tables and integrity constraints.
 - `.github/workflows/rebuild.yml`: validation, refresh, and GitHub Pages publishing.
 
 ## Build and check
@@ -57,7 +59,7 @@ Live dashboard: https://ppitchford02.github.io/dashboard/
 python3 build.py
 python3 build.py --check
 python3 -m unittest discover -s tests
-node --test tests/worker.test.mjs
+node --test tests/*.test.mjs
 ```
 
 `--check` renders in memory and writes neither the page nor the news cache.
@@ -127,6 +129,36 @@ silently overwriting concurrent edits; conflicts return a tool error.
 **Worker changes require a separate Cloudflare deployment.** The Pages workflow
 does not deploy `worker.js`. Existing secrets and bindings must be retained.
 Live model calls and production mutations are not exercised by the local tests.
+
+## Sports Picks
+
+Sports Picks switches within the same page as Today, Study, Systems, and Later.
+The browser loads private picks after the existing dashboard passphrase is
+entered. Picks, original evidence, results, and source checks stay in private
+D1 storage and are never written into `data.json`, the public page, or GitHub.
+The tab keeps captured source wording and correction history, supports review,
+filters, archive/restore, and evidence-backed result entry. Its unit returns
+include only complete picks captured before the event with known valid odds;
+voids are excluded and pushes return zero. Records are tracking, not forecasts.
+
+Deploy the database and Worker before publishing the tab:
+
+1. Create the private D1 database `pitchford-picks` and apply `schema-picks.sql`.
+2. Bind it as `PICKS_DB` on the existing `pitchford-os-ask` Worker.
+3. Deploy `worker.js`, retaining `LIMITS`, all secrets, and existing settings.
+4. Unlock the live dashboard and import the existing desk through the scoped
+   `dashboard_picks_import` browser tool. Preserve IDs, timestamps, and history.
+5. Verify the migrated records before pointing scheduled captures at the
+   dashboard's `dashboard_picks_capture` and `dashboard_picks_source_check` tools.
+
+`POST /picks` requires `DASH_PASSPHRASE`, uses the dashboard origin for CORS, and
+sends `Cache-Control: no-store`. It does not invoke the assistant or write
+public repository content. Database updates reject duplicate picks and stale
+versions, and preserve original evidence. The browser registers only scoped
+picks tools for reading, capture, checks, and the authorized migration.
+Source checks are scheduled separately in Codex at 11 AM, 3 PM, and 6 PM Eastern;
+the dashboard itself does not fetch social media or place bets. The open Picks
+tab is excluded from automatic page refresh so an unfinished entry is retained.
 
 ## Content upkeep
 

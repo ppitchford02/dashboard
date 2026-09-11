@@ -17,6 +17,7 @@
  *
  * Bindings:
  *   LIMITS              KV namespace, for the spend caps
+ *   PICKS_DB            D1 database, private Sports Picks records
  */
 
 const MODEL = "claude-sonnet-5";
@@ -117,6 +118,8 @@ const TOOLS = [
 
 export default {
   async fetch(request, env) {
+    // Picks authenticate independently and never enter the assistant/GitHub path.
+    if (new URL(request.url).pathname === "/picks") return handlePicksRequest(request, env);
     const origin = env.ALLOWED_ORIGIN || "*";
 
     if (request.method === "GET" && new URL(request.url).pathname === "/health") {
@@ -558,4 +561,341 @@ function json(obj, status, origin) {
     status,
     headers: { "content-type": "application/json", ...cors(origin) },
   });
+}
+
+// --------------------------------------------------------------- private picks
+
+const PICKS_ORIGIN = "https://ppitchford02.github.io";
+const PICKS_OWNER = "dashboard-owner";
+const PICK_SOURCES = new Set(["sbd", "bat", "stunad", "danny", "nick", "cru"]);
+const PICK_MARKETS = new Set(["Home run", "Moneyline", "Spread", "Total", "Player prop", "Other"]);
+const PICK_STATUSES = new Set(["pending", "review", "win", "loss", "push", "void"]);
+const PICK_RESULTS = new Set(["win", "loss", "push", "void"]);
+const CHECK_STATUSES = new Set(["Checked", "No new posts", "Sign-in needed", "Access blocked", "Needs review"]);
+const PICK_ACTIONS = new Set(["read", "save", "check", "edit", "settle", "archive", "import"]);
+
+class PickError extends Error {
+  constructor(message, status = 400) { super(message); this.status = status; }
+}
+
+function picksHeaders() {
+  return {
+    "content-type": "application/json",
+    "Cache-Control": "private, no-store",
+    "Access-Control-Allow-Origin": PICKS_ORIGIN,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "content-type",
+    "Vary": "Origin",
+    "X-Content-Type-Options": "nosniff",
+  };
+}
+
+function picksReply(data, status = 200) {
+  return new Response(JSON.stringify(data), { status, headers: picksHeaders() });
+}
+
+function pickObject(value, label = "entry") {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new PickError(`Invalid ${label}.`);
+  return value;
+}
+
+function pickText(value, label, max, min = 0) {
+  if (typeof value !== "string") throw new PickError(`Enter ${label}.`);
+  const text = value.trim();
+  if (text.length < min || text.length > max) throw new PickError(`Keep ${label} between ${min} and ${max.toLocaleString("en-US")} characters.`);
+  return text;
+}
+
+function pickChoice(value, choices, label) {
+  if (!choices.has(value)) throw new PickError(`Choose ${label}.`);
+  return value;
+}
+
+function pickBoolean(value, label) {
+  if (typeof value !== "boolean") throw new PickError(`Confirm ${label}.`);
+  return value;
+}
+
+function pickId(value) {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_.-]{1,128}$/.test(value)) throw new PickError("Invalid record identifier.");
+  return value;
+}
+
+function pickRevision(value) {
+  if (!Number.isSafeInteger(value) || value < 1) throw new PickError("Refresh to load the current record version.");
+  return value;
+}
+
+function pickDate(value) {
+  if (value === "") return value;
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new PickError("Enter a valid event date.");
+  const date = new Date(value + "T12:00:00Z");
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) throw new PickError("Enter a valid event date.");
+  return value;
+}
+
+function pickTime(value, label, optional = false) {
+  if (optional && value === "") return value;
+  if (typeof value !== "string" || value.length > 40 || !/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)?$/.test(value) || Number.isNaN(Date.parse(value))) throw new PickError(`Enter a valid ${label}.`);
+  pickDate(value.slice(0, 10));
+  return value;
+}
+
+function pickUrl(value) {
+  const text = pickText(value, "link", 2000);
+  if (!text) return text;
+  let url;
+  try { url = new URL(text); } catch { throw new PickError("Use a complete https:// link."); }
+  if (url.protocol !== "https:" || !url.hostname || url.username || url.password || /[\u0000-\u001f\u007f]/.test(text)) throw new PickError("Use a complete https:// link without embedded credentials.");
+  return text;
+}
+
+export function validatePickInput(input) {
+  const value = pickObject(input, "pick");
+  const pick = {
+    sourceId: pickChoice(value.sourceId, PICK_SOURCES, "a configured source"),
+    sport: pickChoice(value.sport, new Set(["MLB", "NFL"]), "MLB or NFL"),
+    market: pickChoice(value.market, PICK_MARKETS, "a market"),
+    selection: pickText(value.selection, "selection", 500),
+    event: pickText(value.event, "event", 500),
+    eventDate: pickDate(value.eventDate),
+    odds: value.odds,
+    postedAt: pickTime(value.postedAt, "post time", true),
+    sourceUrl: pickUrl(value.sourceUrl),
+    originalText: pickText(value.originalText, "original post text or transcript", 15000, 1),
+    capturedBeforeStart: pickBoolean(value.capturedBeforeStart, "whether this was captured before the event"),
+  };
+  if (pick.odds !== null && (!Number.isInteger(pick.odds) || Math.abs(pick.odds) < 100 || Math.abs(pick.odds) > 100000)) throw new PickError("American odds must be +100 or greater, or -100 or lower, up to 100,000.");
+  if (pick.market === "Home run" && pick.sport !== "MLB") throw new PickError("Home-run picks must use MLB.");
+  return pick;
+}
+
+export function validateSettlementInput(input) {
+  const value = pickObject(input, "result");
+  const result = {
+    status: pickChoice(value.status, PICK_STATUSES, "a result"),
+    resultEvidence: pickText(value.resultEvidence, "result evidence", 4000),
+    resultUrl: pickUrl(value.resultUrl),
+  };
+  if (PICK_RESULTS.has(result.status) && !result.resultEvidence) throw new PickError("Add a result note or source before settling.");
+  return result;
+}
+
+function pickComplete(pick) { return !!(pick.selection && pick.event && pick.eventDate); }
+
+function validateStoredPick(input) {
+  const value = pickObject(input, "imported pick"), base = validatePickInput(value);
+  const settlement = validateSettlementInput(value);
+  if (PICK_RESULTS.has(settlement.status) && !pickComplete(base)) throw new PickError("Confirm selection, event, and event date before importing a settled result.");
+  const result = {
+    ...base, id: pickId(value.id), ...settlement,
+    createdAt: pickTime(value.createdAt, "creation time"),
+    updatedAt: pickTime(value.updatedAt, "update time"),
+    archived: pickBoolean(value.archived, "archive state"),
+    revision: pickRevision(value.revision),
+  };
+  if (Date.parse(result.updatedAt) < Date.parse(result.createdAt)) throw new PickError("Update time cannot precede creation time.");
+  return result;
+}
+
+export function pickIdentityText(value) {
+  let link = value.sourceUrl;
+  if (link) { const url = new URL(link); url.hash = ""; url.search = ""; link = url.toString(); }
+  return JSON.stringify([value.sourceId, link || value.originalText.trim().toLowerCase(), value.selection.trim().toLowerCase(), value.eventDate, value.event.trim().toLowerCase(), value.market, value.sport]);
+}
+
+async function pickFingerprint(value) {
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(pickIdentityText(value)));
+  return [...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function pickFromRow(row) {
+  return { ...JSON.parse(row.data), archived: !!row.archived, revision: Number(row.revision) };
+}
+
+function originalPickMatches(a, b) {
+  return a.sourceId === b.sourceId && a.sourceUrl === b.sourceUrl && a.originalText === b.originalText;
+}
+
+function checkedResult(result) {
+  if (!result || result.success === false) throw new Error("PICKS_DATABASE_OPERATION_FAILED");
+  return result;
+}
+
+function validateSourceCheck(input, importing = false) {
+  const value = pickObject(input, "source check");
+  return {
+    id: importing ? pickId(value.id) : crypto.randomUUID(),
+    sourceId: pickChoice(value.sourceId, PICK_SOURCES, "a configured source"),
+    status: pickChoice(value.status, CHECK_STATUSES, "a source-check status"),
+    note: pickText(value.note, "source-check note", 2000, 1),
+    checkedAt: importing ? pickTime(value.checkedAt, "check time") : new Date().toISOString(),
+  };
+}
+
+function insertPick(db, pick, fingerprint, originalFingerprint) {
+  return db.prepare("INSERT INTO picks(id,owner,source_id,fingerprint,original_fingerprint,data,archived,revision,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)")
+    .bind(pick.id, PICKS_OWNER, pick.sourceId, fingerprint, originalFingerprint, JSON.stringify(pick), Number(pick.archived), pick.revision, pick.createdAt, pick.updatedAt);
+}
+
+function insertCheck(db, check) {
+  return db.prepare("INSERT INTO source_checks(id,owner,source_id,status,note,checked_at) VALUES(?,?,?,?,?,?)")
+    .bind(check.id, PICKS_OWNER, check.sourceId, check.status, check.note, check.checkedAt);
+}
+
+async function importPicks(db, body) {
+  const desk = pickObject(body.desk, "desk import");
+  for (const [key, max] of [["picks", 100], ["checks", 100], ["revisions", 300]]) {
+    if (!Array.isArray(desk[key]) || desk[key].length > max) throw new PickError(`Import at most ${max} ${key} per request.`);
+  }
+  const picks = desk.picks.map(validateStoredPick), checks = desk.checks.map(value => validateSourceCheck(value, true));
+  const known = new Map(picks.map(pick => [pick.id, pick]));
+  if (known.size !== picks.length) throw new PickError("The import contains duplicate pick identifiers.");
+  const revisions = desk.revisions.map(raw => {
+    const value = pickObject(raw, "revision");
+    let snapshot;
+    try { snapshot = typeof value.snapshot === "string" ? JSON.parse(value.snapshot) : value.snapshot; }
+    catch { throw new PickError("A revision snapshot is invalid."); }
+    const normalized = validateStoredPick(snapshot), id = pickId(value.pickId);
+    if (normalized.id !== id) throw new PickError("A revision belongs to a different pick.");
+    return { id: pickId(value.id), pickId: id, reason: pickText(value.reason, "revision reason", 4000, 1), snapshot: normalized, changedAt: pickTime(value.changedAt, "revision time") };
+  });
+  for (const revision of revisions) {
+    let current = known.get(revision.pickId);
+    if (!current) {
+      const row = await db.prepare("SELECT * FROM picks WHERE id=? AND owner=?").bind(revision.pickId, PICKS_OWNER).first();
+      if (!row) throw new PickError("Import the pick together with its revision history.");
+      current = pickFromRow(row); known.set(current.id, current);
+    }
+    if (revision.snapshot.revision >= current.revision || !originalPickMatches(revision.snapshot, current)) throw new PickError("Revision history does not match the pick's version or original evidence.");
+  }
+  const statements = [], imported = { picks: 0, checks: 0, revisions: 0 }, skipped = { picks: 0, checks: 0, revisions: 0 };
+  for (let index = 0; index < picks.length; index++) {
+    const pick = picks[index], fingerprint = await pickFingerprint(pick);
+    const first = revisions.find(revision => revision.pickId === pick.id && revision.snapshot.revision === 1)?.snapshot;
+    const supplied = desk.picks[index].originalFingerprint;
+    if (supplied !== undefined && (typeof supplied !== "string" || !/^[a-f0-9]{64}$/.test(supplied))) throw new PickError("Invalid original fingerprint.");
+    if (pick.revision > 1 && !first && !supplied) throw new PickError("Include the first revision snapshot or originalFingerprint for a previously edited pick.");
+    const derived = first ? await pickFingerprint(first) : pick.revision === 1 ? fingerprint : null;
+    if (supplied && derived && supplied !== derived) throw new PickError("The original fingerprint does not match the original record.");
+    const originalFingerprint = derived || supplied;
+    const row = await db.prepare("SELECT * FROM picks WHERE id=? AND owner=?").bind(pick.id, PICKS_OWNER).first();
+    if (row) {
+      if (!sameItem(pickFromRow(row), pick) || row.original_fingerprint !== originalFingerprint) throw new PickError("An imported pick already exists with different content. Existing records were kept.", 409);
+      skipped.picks++; continue;
+    }
+    statements.push(insertPick(db, pick, fingerprint, originalFingerprint)); imported.picks++;
+  }
+  for (const check of checks) {
+    const row = await db.prepare("SELECT * FROM source_checks WHERE id=? AND owner=?").bind(check.id, PICKS_OWNER).first();
+    if (row) {
+      const existing = { id: row.id, sourceId: row.source_id, status: row.status, note: row.note, checkedAt: row.checked_at };
+      if (!sameItem(existing, check)) throw new PickError("An imported source check already exists with different content.", 409);
+      skipped.checks++; continue;
+    }
+    statements.push(insertCheck(db, check)); imported.checks++;
+  }
+  for (const revision of revisions) {
+    const row = await db.prepare("SELECT * FROM pick_revisions WHERE id=? AND owner=?").bind(revision.id, PICKS_OWNER).first();
+    if (row) {
+      const existing = { id: row.id, pickId: row.pick_id, reason: row.reason, snapshot: JSON.parse(row.snapshot), changedAt: row.changed_at };
+      if (!sameItem(existing, revision)) throw new PickError("An imported revision already exists with different content.", 409);
+      skipped.revisions++; continue;
+    }
+    statements.push(db.prepare("INSERT INTO pick_revisions(id,owner,pick_id,reason,snapshot,changed_at) VALUES(?,?,?,?,?,?)")
+      .bind(revision.id, PICKS_OWNER, revision.pickId, revision.reason, JSON.stringify(revision.snapshot), revision.changedAt));
+    imported.revisions++;
+  }
+  if (statements.length) (await db.batch(statements)).forEach(checkedResult);
+  return picksReply({ saved: true, imported, skipped });
+}
+
+async function runPicksAction(body, db) {
+  const action = pickChoice(body.action, PICK_ACTIONS, "a supported picks action");
+  if (action === "read") {
+    const [picks, checks, revisions] = await Promise.all([
+      db.prepare("SELECT * FROM picks WHERE owner=? ORDER BY created_at DESC, id DESC").bind(PICKS_OWNER).all(),
+      db.prepare("SELECT * FROM source_checks WHERE owner=? ORDER BY checked_at DESC, id DESC LIMIT 60").bind(PICKS_OWNER).all(),
+      db.prepare("SELECT * FROM pick_revisions WHERE owner=? ORDER BY changed_at DESC, id DESC LIMIT 300").bind(PICKS_OWNER).all(),
+    ]);
+    [picks, checks, revisions].forEach(checkedResult);
+    return picksReply({
+      picks: picks.results.map(pickFromRow),
+      checks: checks.results.map(row => ({ id: row.id, sourceId: row.source_id, status: row.status, note: row.note, checkedAt: row.checked_at })),
+      revisions: revisions.results.map(row => ({ id: row.id, pickId: row.pick_id, reason: row.reason, snapshot: row.snapshot, changedAt: row.changed_at })),
+    });
+  }
+  if (action === "import") return importPicks(db, body);
+  const now = new Date().toISOString();
+  if (action === "save") {
+    const value = validatePickInput(body.pick), fingerprint = await pickFingerprint(value);
+    const duplicate = await db.prepare("SELECT id FROM picks WHERE owner=? AND (fingerprint=? OR original_fingerprint=?)").bind(PICKS_OWNER, fingerprint, fingerprint).first();
+    if (duplicate) return picksReply({ error: "This pick is already in your desk.", duplicateId: duplicate.id }, 409);
+    const pick = { ...value, id: crypto.randomUUID(), status: pickComplete(value) ? "pending" : "review", resultEvidence: "", resultUrl: "", createdAt: now, updatedAt: now, archived: false, revision: 1 };
+    checkedResult(await insertPick(db, pick, fingerprint, fingerprint).run());
+    return picksReply({ pick }, 201);
+  }
+  if (action === "check") {
+    const check = validateSourceCheck(body);
+    checkedResult(await insertCheck(db, check).run());
+    return picksReply({ saved: true, check });
+  }
+  const id = pickId(body.id), revision = pickRevision(body.revision);
+  const row = await db.prepare("SELECT * FROM picks WHERE id=? AND owner=?").bind(id, PICKS_OWNER).first();
+  if (!row) throw new PickError("That pick was not found.", 404);
+  const previous = pickFromRow(row);
+  if (previous.revision !== revision) throw new PickError("This pick changed in another session. Refresh before editing.", 409);
+  let next = { ...previous, updatedAt: now, revision: revision + 1 }, reason, fingerprint = row.fingerprint;
+  if (action === "settle") {
+    const value = validateSettlementInput(body);
+    if (PICK_RESULTS.has(value.status) && !pickComplete(previous)) throw new PickError("Confirm the exact selection, event, and event date before adding a result.");
+    next = { ...next, ...value };
+    reason = `Result set to ${value.status}: ${value.resultEvidence || "Reopened for review"}`;
+  } else if (action === "edit") {
+    const value = validatePickInput(body.pick);
+    reason = pickText(body.reason, "correction reason", 2000, 3);
+    if (!originalPickMatches(value, previous)) throw new PickError("Original evidence stays unchanged. Archive this entry and capture a new source if needed.");
+    next = { ...next, ...value, status: pickComplete(value) ? "pending" : "review", resultEvidence: "", resultUrl: "" };
+    fingerprint = await pickFingerprint(value);
+    const duplicate = await db.prepare("SELECT id FROM picks WHERE owner=? AND (fingerprint=? OR original_fingerprint=?) AND id<>?").bind(PICKS_OWNER, fingerprint, fingerprint, id).first();
+    if (duplicate) throw new PickError("This correction matches another saved pick.", 409);
+  } else if (action === "archive") {
+    next.archived = pickBoolean(body.archived, "archive state");
+    reason = next.archived ? "Archived from active record" : "Restored to active record";
+  }
+  // D1 batch is transactional. The revision snapshot is written only when this
+  // exact version was updated; an insert failure rolls the update back as well.
+  const results = await db.batch([
+    db.prepare("UPDATE picks SET data=?,archived=?,revision=?,fingerprint=?,updated_at=? WHERE id=? AND owner=? AND revision=?")
+      .bind(JSON.stringify(next), Number(next.archived), next.revision, fingerprint, now, id, PICKS_OWNER, revision),
+    db.prepare("INSERT INTO pick_revisions(id,owner,pick_id,reason,snapshot,changed_at) SELECT ?,?,?,?,?,? WHERE changes()=1")
+      .bind(crypto.randomUUID(), PICKS_OWNER, id, reason, JSON.stringify(previous), now),
+  ]);
+  results.forEach(checkedResult);
+  if (Number(results[0]?.meta?.changes) !== 1) throw new PickError("This pick changed in another session. Refresh before editing.", 409);
+  return picksReply({ pick: next });
+}
+
+export async function handlePicksRequest(request, env) {
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: picksHeaders() });
+  if (request.method !== "POST") return picksReply({ error: "POST only" }, 405);
+  try {
+    if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) return picksReply({ error: "Send JSON data." }, 415);
+    if (Number(request.headers.get("content-length") || 0) > 2000000) return picksReply({ error: "Split this import into smaller requests." }, 413);
+    const raw = await request.text();
+    if (raw.length > 2000000) return picksReply({ error: "Split this import into smaller requests." }, 413);
+    let body;
+    try { body = JSON.parse(raw); } catch { return picksReply({ error: "Invalid request." }, 400); }
+    pickObject(body, "request");
+    if (typeof body.pass !== "string" || !env.DASH_PASSPHRASE || body.pass !== env.DASH_PASSPHRASE) return picksReply({ error: "Unlock Sports Picks with your dashboard passphrase." }, 401);
+    const origin = request.headers.get("origin");
+    if (origin && origin !== PICKS_ORIGIN) return picksReply({ error: "Open Sports Picks from your dashboard." }, 403);
+    if (body.action !== "import" && raw.length > 25000) return picksReply({ error: "Keep each request under 25,000 characters." }, 413);
+    if (!env.PICKS_DB) throw new Error("PICKS_DATABASE_UNAVAILABLE");
+    return await runPicksAction(body, env.PICKS_DB);
+  } catch (error) {
+    if (error instanceof PickError) return picksReply({ error: error.message }, error.status);
+    if (/UNIQUE constraint|duplicate pick fingerprint/i.test(String(error))) return picksReply({ error: "This record is already in your desk or matches another pick. Refresh before retrying." }, 409);
+    return picksReply({ error: "Your picks are temporarily unavailable. Your input has been kept; please retry." }, 503);
+  }
 }

@@ -334,6 +334,7 @@ def main():
         "{{STYLES}}": (HERE / 'dashboard.css').read_text(),
         "{{CORE_JS}}": (HERE / 'dashboard-core.js').read_text(),
         "{{DASHBOARD_JS}}": (HERE / 'dashboard.js').read_text(),
+        "{{PLANNER_JS}}": (HERE / "daily-planner.js").read_text(),
         "{{PICKS_JS}}": (HERE / 'picks.js').read_text(),
         "{{NEWS}}": news_block(now, write=not check),
         "{{TZ_JSON}}": js(cfg.get('timezone', 'America/New_York')),

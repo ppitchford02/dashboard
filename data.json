@@ -27,7 +27,7 @@
     },
     {
       "name": "Law School OS",
-      "schedule": "06:40 / 12:40 / 18:40",
+      "schedule": "09:00 / 12:00 / 18:00 ET",
       "status": "on"
     },
     {
@@ -39,14 +39,14 @@
   "courses": [
     {
       "name": "Lawyering Analysis & Research",
-      "meta": "TUE/THU 18:30 · RM 281"
+      "meta": "TUE/THU 18:30 \u00b7 RM 281"
     },
     {
       "name": "Lawyering Analysis & Writing",
       "meta": "ASYNC"
     },
     {
-      "name": "Civil Procedure — Fed. Juris.",
+      "name": "Civil Procedure \u2014 Fed. Juris.",
       "meta": "ASYNC"
     }
   ],
@@ -57,7 +57,7 @@
       "due": "2026-09-10T18:30",
       "end": "2026-09-10T20:00",
       "course": "LAWX 730",
-      "note": "Room 281 · per course schedule",
+      "note": "Room 281 \u00b7 per course schedule",
       "kind": "class"
     }
   ],
@@ -66,7 +66,8 @@
   "last_runs": [
     {
       "name": "Law School OS sweep",
-      "at": "18:40"
+      "at": "2026-09-11T12:41:07-04:00",
+      "meaning": "Last successful Brightspace capture, with date and timezone; not a preparation or delivery completion."
     },
     {
       "name": "Outlook sort",
@@ -137,12 +138,24 @@
       },
       {
         "label": "Wed",
-        "meta": "87 · 35% RAIN"
+        "meta": "87 \u00b7 35% RAIN"
       },
       {
         "label": "Thu",
-        "meta": "78 · 20% RAIN"
+        "meta": "78 \u00b7 20% RAIN"
       }
     ]
+  },
+  "law_school_status": {
+    "last_successful_capture": "2026-09-11T12:41:07-04:00",
+    "schedule_timezone": "America/New_York",
+    "schedule": [
+      "09:00",
+      "12:00",
+      "18:00"
+    ],
+    "deadline_collection": "Brightspace collection is implemented. This timestamp records its last successful capture.",
+    "dashboard_scope": "The dashboard reading queue is not connected to live law plan output. Do not interpret this as the agent lacking deadline collection.",
+    "freshness_rule": "Use the full capture date and timezone. A scheduled time is not evidence a run happened. Never infer yesterday from an undated last_runs time."
   }
 }

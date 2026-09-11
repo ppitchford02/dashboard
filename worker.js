@@ -17,7 +17,9 @@
  *
  * Bindings:
  *   LIMITS              KV namespace, for the spend caps
- *   PICKS_DB            D1 database, private Sports Picks records
+ *   PICKS_DB            D1 database, private Sports Picks records and, unless
+ *                       PLANNER_DB is bound separately, the private daily list
+ *   PLANNER_DB          optional D1 override for "Today's list" storage
  */
 
 const MODEL = "claude-sonnet-5";
@@ -118,12 +120,15 @@ const TOOLS = [
 
 export default {
   async fetch(request, env) {
-    // Picks authenticate independently and never enter the assistant/GitHub path.
-    if (new URL(request.url).pathname === "/picks") return handlePicksRequest(request, env);
+    // Picks and the daily planner authenticate independently and never enter
+    // the assistant/GitHub path. Both stay in private D1, off the public page.
+    const route = new URL(request.url).pathname;
+    if (route === "/picks") return handlePicksRequest(request, env);
+    if (route === "/planner") return handlePlannerRequest(request, env);
     const origin = env.ALLOWED_ORIGIN || "*";
 
     if (request.method === "GET" && new URL(request.url).pathname === "/health") {
-      return json({ ok: true, version: "daily-desk-1", actions: true }, 200, origin);
+      return json({ ok: true, version: "daily-desk-2", actions: true, planner: true }, 200, origin);
     }
 
     if (request.method === "OPTIONS") {
@@ -182,7 +187,10 @@ export default {
     });
     const todayIso = now.toLocaleDateString("en-CA", { timeZone: tz });
 
-    const system = buildSystem(nowLocal, todayIso, tz, dash);
+    const system = [
+      { type: "text", text: buildSystemStatic(), cache_control: { type: "ephemeral" } },
+      { type: "text", text: buildSystemDynamic(nowLocal, todayIso, tz, dash) },
+    ];
 
     // ---- conversation -------------------------------------------------
     const messages = [];
@@ -258,10 +266,9 @@ export default {
 
 // --------------------------------------------------------------- system
 
-function buildSystem(nowLocal, todayIso, tz, dash) {
+function buildSystemStatic() {
   return [
     "You are the assistant built into PITCHFORD OS, Preston's personal dashboard.",
-    `Right now it is ${nowLocal} (${tz}). Today's date in ISO form is ${todayIso}.`,
     "",
     "Preston is a first-year part-time law student at the University of Akron and a",
     "law clerk at his father's firm. He is direct and wants direct answers.",
@@ -289,6 +296,12 @@ function buildSystem(nowLocal, todayIso, tz, dash) {
     "",
     "Client and firm matters are deliberately kept off this dashboard. If asked",
     "about work files, say they are kept off this page on purpose.",
+  ].join("\n");
+}
+
+function buildSystemDynamic(nowLocal, todayIso, tz, dash) {
+  return [
+    `Right now it is ${nowLocal} (${tz}). Today's date in ISO form is ${todayIso}.`,
     "",
     "DASHBOARD DATA:",
     dash ? JSON.stringify(dash, null, 1) : "(could not load data.json this request)",
@@ -298,6 +311,9 @@ function buildSystem(nowLocal, todayIso, tz, dash) {
 // --------------------------------------------------------------- model
 
 async function callModel(env, { system, messages, tools }) {
+  const toolsC = Array.isArray(tools) && tools.length
+    ? tools.map((t, i) => (i === tools.length - 1 ? { ...t, cache_control: { type: "ephemeral" } } : t))
+    : tools;
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     signal: AbortSignal.timeout(60000),
@@ -306,7 +322,7 @@ async function callModel(env, { system, messages, tools }) {
       "x-api-key": env.ANTHROPIC_API_KEY,
       "anthropic-version": "2023-06-01",
     },
-    body: JSON.stringify({ model: env.ANTHROPIC_MODEL || MODEL, max_tokens: MAX_TOKENS, system, messages, tools }),
+    body: JSON.stringify({ model: env.ANTHROPIC_MODEL || MODEL, max_tokens: MAX_TOKENS, system, messages, tools: toolsC }),
   });
   if (!r.ok) return { ok: false, status: r.status, detail: await r.text() };
   return { ok: true, data: await r.json() };
@@ -897,5 +913,180 @@ export async function handlePicksRequest(request, env) {
     if (error instanceof PickError) return picksReply({ error: error.message }, error.status);
     if (/UNIQUE constraint|duplicate pick fingerprint/i.test(String(error))) return picksReply({ error: "This record is already in your desk or matches another pick. Refresh before retrying." }, 409);
     return picksReply({ error: "Your picks are temporarily unavailable. Your input has been kept; please retry." }, 503);
+  }
+}
+
+// --------------------------------------------------------------- private planner
+//
+// "Today's list" is personal, changes many times a day, and is not useful to
+// anyone but Preston. It therefore lives in private D1 next to Sports Picks
+// rather than in data.json: a GitHub write would publish the list on the public
+// page, cost a commit and a Pages rebuild per checkbox, and burn the shared
+// assistant rate limit. This path never calls the model or touches the repo.
+
+const PLANNER_ORIGIN = "https://ppitchford02.github.io";
+const PLANNER_OWNER = "dashboard-owner";
+const PLANNER_ACTIONS = new Set(["read", "save", "toggle", "prompted"]);
+const PLANNER_MAX_TASKS = 100;
+const PLANNER_MAX_TITLE = 200;
+const PLANNER_SAVE_RETRIES = 3;
+
+class PlannerError extends Error {
+  constructor(message, status = 400) { super(message); this.status = status; }
+}
+
+function plannerHeaders() {
+  return {
+    "content-type": "application/json",
+    "Cache-Control": "private, no-store",
+    "Access-Control-Allow-Origin": PLANNER_ORIGIN,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "content-type",
+    "Vary": "Origin",
+    "X-Content-Type-Options": "nosniff",
+  };
+}
+
+function plannerReply(data, status = 200) {
+  return new Response(JSON.stringify(data), { status, headers: plannerHeaders() });
+}
+
+function plannerDay(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new PlannerError("Invalid day.");
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) throw new PlannerError("Invalid day.");
+  return value;
+}
+
+// Titles identify a task across devices, so they are compared case-insensitively
+// and de-duplicated exactly the way the browser does when building the list.
+function plannerKey(title) { return String(title).trim().toLowerCase(); }
+
+function plannerTasks(value) {
+  if (!Array.isArray(value)) throw new PlannerError("Invalid task list.");
+  if (value.length > PLANNER_MAX_TASKS) throw new PlannerError(`Keep today's list under ${PLANNER_MAX_TASKS} tasks.`);
+  const tasks = [], seen = new Set();
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new PlannerError("Invalid task.");
+    if (typeof entry.title !== "string") throw new PlannerError("Invalid task.");
+    const title = entry.title.trim();
+    if (!title) continue;
+    if (title.length > PLANNER_MAX_TITLE) throw new PlannerError(`Keep each task under ${PLANNER_MAX_TITLE} characters.`);
+    const key = plannerKey(title);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    tasks.push({ title, done: entry.done === true, priority: entry.priority === true });
+  }
+  return tasks;
+}
+
+function plannerRevision(value, label = "revision") {
+  if (value === undefined || value === null) return 0;
+  if (!Number.isInteger(value) || value < 0) throw new PlannerError(`Invalid ${label}.`);
+  return value;
+}
+
+function plannerState(row, day) {
+  if (!row) return { day, tasks: [], prompted: false, revision: 0 };
+  let tasks = [];
+  try { tasks = plannerTasks(JSON.parse(row.tasks)); } catch { tasks = []; }
+  return { day: row.day, tasks, prompted: row.prompted === 1, revision: row.revision };
+}
+
+function plannerRow(db, day) {
+  return db.prepare("SELECT * FROM planner_days WHERE owner=? AND day=?").bind(PLANNER_OWNER, day);
+}
+
+// Writes are guarded on the revision the caller last saw. A mismatch means
+// another device changed the same day, and the caller is told rather than
+// having its version silently win.
+async function plannerWrite(db, day, revision, tasks, prompted) {
+  const now = new Date().toISOString();
+  const payload = JSON.stringify(tasks);
+  if (revision === 0) {
+    const inserted = await db
+      .prepare("INSERT INTO planner_days(owner,day,tasks,prompted,revision,created_at,updated_at) SELECT ?,?,?,?,1,?,? WHERE NOT EXISTS (SELECT 1 FROM planner_days WHERE owner=? AND day=?)")
+      .bind(PLANNER_OWNER, day, payload, Number(prompted), now, now, PLANNER_OWNER, day)
+      .run();
+    checkedResult(inserted);
+    return Number(inserted.meta?.changes) === 1;
+  }
+  const updated = await db
+    .prepare("UPDATE planner_days SET tasks=?,prompted=?,revision=revision+1,updated_at=? WHERE owner=? AND day=? AND revision=?")
+    .bind(payload, Number(prompted), now, PLANNER_OWNER, day, revision)
+    .run();
+  checkedResult(updated);
+  return Number(updated.meta?.changes) === 1;
+}
+
+async function runPlannerAction(body, db) {
+  const action = pickChoice(body.action, PLANNER_ACTIONS, "a supported planner action");
+  const day = plannerDay(body.day);
+
+  if (action === "read") {
+    return plannerReply(plannerState(await plannerRow(db, day).first(), day));
+  }
+
+  if (action === "save") {
+    const tasks = plannerTasks(body.tasks);
+    const revision = plannerRevision(body.revision);
+    const current = plannerState(await plannerRow(db, day).first(), day);
+    if (current.revision !== revision) return plannerReply({ error: "Today's list changed on another device. Reload it before replacing today's plan.", conflict: true, ...current }, 409);
+    // Planning the day is itself the check-in, so a save always marks it done.
+    if (!(await plannerWrite(db, day, revision, tasks, true))) {
+      return plannerReply({ error: "Today's list changed on another device. Reload it before replacing today's plan.", conflict: true, ...plannerState(await plannerRow(db, day).first(), day) }, 409);
+    }
+    return plannerReply({ day, tasks, prompted: true, revision: revision + 1 });
+  }
+
+  // Ticking a box is the frequent action and must not fail just because another
+  // device changed a different task, so a lost race is re-read and re-applied.
+  if (action === "toggle") {
+    const key = plannerKey(pickText(body.title, "a task", PLANNER_MAX_TITLE, 1));
+    const done = pickBoolean(body.done, "task state");
+    for (let attempt = 0; attempt < PLANNER_SAVE_RETRIES; attempt++) {
+      const current = plannerState(await plannerRow(db, day).first(), day);
+      const target = current.tasks.find(task => plannerKey(task.title) === key);
+      if (!target) throw new PlannerError("That task is no longer on today's list. Reload it before trying again.", 409);
+      if (target.done === done) return plannerReply(current);
+      const tasks = current.tasks.map(task => (plannerKey(task.title) === key ? { ...task, done } : task));
+      if (await plannerWrite(db, day, current.revision, tasks, current.prompted)) {
+        return plannerReply({ day, tasks, prompted: current.prompted, revision: current.revision + 1 });
+      }
+    }
+    throw new PlannerError("Today's list is being changed on another device. Try again in a moment.", 409);
+  }
+
+  // Dismissing the 9 AM check-in is a preference for the day, not a task edit.
+  for (let attempt = 0; attempt < PLANNER_SAVE_RETRIES; attempt++) {
+    const current = plannerState(await plannerRow(db, day).first(), day);
+    if (current.prompted) return plannerReply(current);
+    if (await plannerWrite(db, day, current.revision, current.tasks, true)) {
+      return plannerReply({ day, tasks: current.tasks, prompted: true, revision: current.revision + 1 });
+    }
+  }
+  throw new PlannerError("Today's list is being changed on another device. Try again in a moment.", 409);
+}
+
+export async function handlePlannerRequest(request, env) {
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: plannerHeaders() });
+  if (request.method !== "POST") return plannerReply({ error: "POST only" }, 405);
+  try {
+    if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) return plannerReply({ error: "Send JSON data." }, 415);
+    const raw = await request.text();
+    if (raw.length > 60000) return plannerReply({ error: "Keep today's list shorter." }, 413);
+    let body;
+    try { body = JSON.parse(raw); } catch { return plannerReply({ error: "Invalid request." }, 400); }
+    pickObject(body, "request");
+    if (typeof body.pass !== "string" || !env.DASH_PASSPHRASE || body.pass !== env.DASH_PASSPHRASE) return plannerReply({ error: "Unlock the dashboard to sync today's list." }, 401);
+    const origin = request.headers.get("origin");
+    if (origin && origin !== PLANNER_ORIGIN) return plannerReply({ error: "Open today's list from your dashboard." }, 403);
+    const db = env.PLANNER_DB || env.PICKS_DB;
+    if (!db) throw new Error("PLANNER_DATABASE_UNAVAILABLE");
+    return await runPlannerAction(body, db);
+  } catch (error) {
+    if (error instanceof PlannerError) return plannerReply({ error: error.message }, error.status);
+    if (error instanceof PickError) return plannerReply({ error: error.message }, error.status);
+    return plannerReply({ error: "Today's list is temporarily unavailable. Your list is kept on this device; please retry." }, 503);
   }
 }

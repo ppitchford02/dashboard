@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 const code=await readFile(new URL('../worker.js',import.meta.url),'utf8');
-const {runTool,runDashboardAction,default:worker}=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
+const {runTool,runDashboardAction,handlePlannerRequest,default:worker}=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
 function repo(data){return {writes:0,async read(){return {data:structuredClone(data),sha:'test'};},async write(path,updated){this.writes++;this.updated=updated;}};}
 test('ambiguous and empty removals cannot delete multiple records',async()=>{
  for(const name of ['remove_deadline','remove_attention']){
@@ -59,4 +59,100 @@ test('stale structured edits and invalid actions fail without a write',async()=>
 test('dashboard actions require the existing passphrase before any write',async()=>{
  const response=await worker.fetch(new Request('https://example.com',{method:'POST',body:JSON.stringify({action:{name:'add_attention',item:{title:'x',body:''}}})}),{DASH_PASSPHRASE:'test-only'});
  assert.equal(response.status,401);
+});
+
+// --- private daily planner -------------------------------------------------
+// A small D1 double: the handler only issues three statements, matched here by
+// leading keyword. It exercises the handler, not SQLite.
+function plannerDb(rows=new Map()){
+ const key=(owner,day)=>`${owner}|${day}`;
+ return {rows,prepare(sql){const self=this;return {bind(...args){return {
+  async first(){if(!/^SELECT/.test(sql))throw new Error('unexpected '+sql);const [owner,day]=args;return self.rows.get(key(owner,day))||null;},
+  async run(){
+   if(/^INSERT/.test(sql)){const [owner,day,tasks,prompted]=args;if(self.rows.has(key(owner,day)))return {success:true,meta:{changes:0}};
+    self.rows.set(key(owner,day),{owner,day,tasks,prompted,revision:1});return {success:true,meta:{changes:1}};}
+   if(/^UPDATE/.test(sql)){const [tasks,prompted,,owner,day,revision]=args;const row=self.rows.get(key(owner,day));
+    if(!row||row.revision!==revision)return {success:true,meta:{changes:0}};
+    self.rows.set(key(owner,day),{...row,tasks,prompted,revision:row.revision+1});return {success:true,meta:{changes:1}};}
+   throw new Error('unexpected '+sql);},
+ };}};}};
+}
+const plannerEnv=db=>({DASH_PASSPHRASE:'secret',PICKS_DB:db});
+function plannerPost(body,env,origin='https://ppitchford02.github.io'){
+ return handlePlannerRequest(new Request('https://example.com/planner',{method:'POST',headers:{'content-type':'application/json',origin},body:JSON.stringify(body)}),env);
+}
+const plannerBody=async response=>[response.status,await response.json()];
+
+test('the planner rejects a wrong passphrase and a foreign origin before touching storage',async()=>{
+ const db=plannerDb();
+ assert.equal((await plannerPost({pass:'wrong',action:'read',day:'2026-09-11'},plannerEnv(db))).status,401);
+ assert.equal((await plannerPost({pass:'secret',action:'read',day:'2026-09-11'},plannerEnv(db),'https://evil.example')).status,403);
+ assert.equal(db.rows.size,0);
+});
+
+test('the planner never writes the repository or the public page',async()=>{
+ // A GitHub token would be a bug here: today's list must stay off data.json.
+ const db=plannerDb();
+ const response=await plannerPost({pass:'secret',action:'save',day:'2026-09-11',tasks:[{title:'Draft memo'}],revision:0},plannerEnv(db));
+ assert.equal(response.status,200);
+ assert.equal(response.headers.get('Cache-Control'),'private, no-store');
+ assert.equal(db.rows.size,1);
+});
+
+test('a saved list is returned to another device unchanged',async()=>{
+ const db=plannerDb();
+ await plannerPost({pass:'secret',action:'save',day:'2026-09-11',revision:0,tasks:[{title:'Read chapter',priority:true},{title:'Take a walk'}]},plannerEnv(db));
+ const [status,data]=await plannerBody(await plannerPost({pass:'secret',action:'read',day:'2026-09-11'},plannerEnv(db)));
+ assert.equal(status,200);
+ assert.equal(data.prompted,true);
+ assert.deepEqual(data.tasks,[{title:'Read chapter',done:false,priority:true},{title:'Take a walk',done:false,priority:false}]);
+});
+
+test('toggling one task leaves the rest of the list alone',async()=>{
+ const db=plannerDb();
+ await plannerPost({pass:'secret',action:'save',day:'2026-09-11',revision:0,tasks:[{title:'Read chapter'},{title:'Take a walk'}]},plannerEnv(db));
+ const [status,data]=await plannerBody(await plannerPost({pass:'secret',action:'toggle',day:'2026-09-11',title:'read CHAPTER',done:true},plannerEnv(db)));
+ assert.equal(status,200);
+ assert.deepEqual(data.tasks.map(t=>[t.title,t.done]),[['Read chapter',true],['Take a walk',false]]);
+});
+
+test('a stale save is refused and returns the newer list instead of overwriting it',async()=>{
+ const db=plannerDb();
+ await plannerPost({pass:'secret',action:'save',day:'2026-09-11',revision:0,tasks:[{title:'First plan'}]},plannerEnv(db));
+ await plannerPost({pass:'secret',action:'save',day:'2026-09-11',revision:1,tasks:[{title:'Second plan'}]},plannerEnv(db));
+ const [status,data]=await plannerBody(await plannerPost({pass:'secret',action:'save',day:'2026-09-11',revision:1,tasks:[{title:'Stale plan'}]},plannerEnv(db)));
+ assert.equal(status,409);
+ assert.equal(data.conflict,true);
+ assert.deepEqual(data.tasks.map(t=>t.title),['Second plan']);
+});
+
+test('invalid days, oversized lists and unknown actions are rejected',async()=>{
+ const db=plannerDb();
+ for(const day of ['tomorrow','2026-13-01','2026-02-30','2026-9-1'])
+  assert.equal((await plannerPost({pass:'secret',action:'read',day},plannerEnv(db))).status,400);
+ assert.equal((await plannerPost({pass:'secret',action:'drop',day:'2026-09-11'},plannerEnv(db))).status,400);
+ const many=Array.from({length:101},(_,i)=>({title:`Task ${i}`}));
+ assert.equal((await plannerPost({pass:'secret',action:'save',day:'2026-09-11',revision:0,tasks:many},plannerEnv(db))).status,400);
+ assert.equal((await plannerPost({pass:'secret',action:'save',day:'2026-09-11',revision:0,tasks:[{title:'x'.repeat(201)}]},plannerEnv(db))).status,400);
+ assert.equal(db.rows.size,0);
+});
+
+test('duplicate and blank task titles are collapsed the way the browser collapses them',async()=>{
+ const db=plannerDb();
+ const [,data]=await plannerBody(await plannerPost({pass:'secret',action:'save',day:'2026-09-11',revision:0,tasks:[{title:'Read chapter'},{title:'  '},{title:'read chapter'},{title:' Take a walk '}]},plannerEnv(db)));
+ assert.deepEqual(data.tasks.map(t=>t.title),['Read chapter','Take a walk']);
+});
+
+test('dismissing the check-in records it without inventing tasks',async()=>{
+ const db=plannerDb();
+ const [status,data]=await plannerBody(await plannerPost({pass:'secret',action:'prompted',day:'2026-09-11'},plannerEnv(db)));
+ assert.equal(status,200);
+ assert.equal(data.prompted,true);
+ assert.deepEqual(data.tasks,[]);
+});
+
+test('the planner reports unavailable storage without losing the caller’s list',async()=>{
+ const response=await plannerPost({pass:'secret',action:'read',day:'2026-09-11'},{DASH_PASSPHRASE:'secret'});
+ assert.equal(response.status,503);
+ assert.match((await response.json()).error,/kept on this device/);
 });

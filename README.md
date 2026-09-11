@@ -9,11 +9,13 @@ is underway, and reflection for 90 minutes afterward. Evening reset begins at
 use 12-hour time in the configured timezone.
 
 Quick captures, course/day study notes, prep checklists, theme preference, and
-focus history are stored only in this browser. Notes can be downloaded as text.
-Storage failures are shown explicitly. Local notes are never included in
-assistant requests or published automatically. “Add to dashboard” opens a clear
-public-save form and requires the existing passphrase. Captures remain local
-after publication, and completed captures can be reopened.
+focus history are stored only in this browser. Today's list is the exception:
+it syncs across devices through private D1 and never reaches the public page.
+Notes can be downloaded as text. Storage failures are shown explicitly. Local
+notes are never included in assistant requests or published automatically. “Add
+to dashboard” opens a clear public-save form and requires the existing
+passphrase. Captures remain local after publication, and completed captures can
+be reopened.
 
 Attention cards can link to schedule entries through `related_deadlines` (an
 array of exact deadline titles). Relative labels derive from those dates, and
@@ -28,11 +30,13 @@ Systems shows the actual publishing run and distinguishes configured agent
 statuses from verified execution. No new background messages or notifications
 are scheduled; the daily routines adapt the open page.
 
-Front-end sources are `dashboard.css`, `dashboard-core.js`, `picks.js`, and `dashboard.js`.
+Front-end sources are `dashboard.css`, `dashboard-core.js`, `picks.js`,
+`daily-planner.js`, and `dashboard.js`.
 The renderer embeds them in the page. Run `node --test tests/*.test.mjs` and
 `python3 -m unittest discover -s tests` before publication. The Worker provides
 `GET /health` with its non-secret version and accepts authenticated POST actions
-`add_attention`, `complete_attention`, and `restore_attention`.
+`add_attention`, `complete_attention`, and `restore_attention`, plus the private
+`/picks` and `/planner` endpoints.
 
 A compact personal dashboard with an assistant, attention items, schedule,
 workforce, weather, personal inbox, and a morning news brief. Navy and gold,
@@ -48,9 +52,11 @@ Live dashboard: https://ppitchford02.github.io/dashboard/
 - `news.py`: publisher RSS fetch, daily edition cache, safe headline rendering.
 - `news.json`: last successfully fetched edition for each feed.
 - `index.html`: generated page; edit the template instead.
-- `worker.js`: separately deployed Cloudflare assistant and private picks endpoint.
+- `worker.js`: separately deployed Cloudflare assistant, private picks and planner endpoints.
+- `daily-planner.js`: Today's list, synced across devices through private D1.
 - `picks.js`: native Sports Picks tab, evidence, filters, and record tracking.
 - `schema-picks.sql`: private D1 picks tables and integrity constraints.
+- `schema-planner.sql`: private D1 table behind Today's list.
 - `.github/workflows/rebuild.yml`: validation, refresh, and GitHub Pages publishing.
 
 ## Build and check
@@ -159,6 +165,40 @@ picks tools for reading, capture, checks, and the authorized migration.
 Source checks are scheduled separately in Codex at 11 AM, 3 PM, and 6 PM Eastern;
 the dashboard itself does not fetch social media or place bets. The open Picks
 tab is excluded from automatic page refresh so an unfinished entry is retained.
+
+## Today's list
+
+Today's list is stored server-side in the private D1 database and follows
+Preston between his phone and his Mac. It is **not** written into `data.json`,
+the published page, or the GitHub repository: the list is personal, it changes
+many times a day, and a repository write would publish it, spend a commit and a
+Pages rebuild per checkbox, and consume the assistant's shared rate limit. The
+assistant therefore cannot see or edit Today's list.
+
+`POST /planner` requires `DASH_PASSPHRASE`, uses the dashboard origin for CORS,
+and sends `Cache-Control: private, no-store`. It does not invoke the model, call
+GitHub, or count against the KV message caps. Actions are `read`, `save`,
+`toggle`, and `prompted`.
+
+`localStorage` under `pitchford-daily-planner:YYYY-MM-DD` is kept only as an
+offline cache, so the list paints immediately on load and still works when the
+Worker is unreachable. A failed sync keeps the local copy and says so explicitly
+rather than dropping the edit.
+
+Replacing the day's plan is guarded by a revision: if the same day changed on
+another device first, the save is refused and the newer list is shown instead of
+being overwritten. Ticking a checkbox sends a scoped toggle for that one task
+and retries a lost race, so two devices working the same list do not collide.
+The 9 AM Eastern check-in is recorded for the day rather than per browser, so
+planning on one device does not prompt again on another. A browser that has not
+been unlocked shows its own cached list and offers an explicit sync.
+
+Deploy before publishing the tab:
+
+1. Apply `schema-planner.sql` to the D1 database already bound as `PICKS_DB`.
+   Bind `PLANNER_DB` instead only to keep the list in a separate database.
+2. Deploy `worker.js`, retaining `LIMITS`, `PICKS_DB`, and all secrets.
+3. Confirm `GET /health` reports `"planner": true`.
 
 ## Content upkeep
 

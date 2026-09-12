@@ -147,6 +147,11 @@ filters, archive/restore, and evidence-backed result entry. Its unit returns
 include only complete picks captured before the event with known valid odds;
 voids are excluded and pushes return zero. Records are tracking, not forecasts.
 
+The **Record a source check** form in the Sports Picks sidebar saves a source,
+status and observation note through the same private API used by the agent.
+Failed saves retain the note for correction or retry. A locked new device waits
+to load the shared daily planner before showing a morning planning prompt.
+
 Deploy the database and Worker before publishing the tab:
 
 1. Create the private D1 database `pitchford-picks` and apply `schema-picks.sql`.

@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 const script=readFileSync(new URL('../daily-planner.js',import.meta.url),'utf8');
-function harness(store=new Map()) {
-  let now='2026-09-11T12:59:00Z', tick;
+function harness(store=new Map(), initialNow='2026-09-11T12:59:00Z') {
+  let now=initialNow, tick;
   class Element {
     constructor(){this.children=[];this.listeners={};this.value='';this.open=false;this.hidden=false;}
     append(...nodes){this.children.push(...nodes);}
@@ -47,6 +47,18 @@ test('Later dismisses for the day and manual editing remains available',()=>{
  const ui=harness();ui.time('2026-09-11T13:00:00Z');ui.get('planner-later').fire('click');
  ui.time('2026-09-11T15:00:00Z');assert.equal(ui.get('planner-dialog').open,false);
  ui.get('planner-edit').fire('click');assert.equal(ui.get('planner-dialog').open,true);
+});
+
+test('a locked empty device waits for the shared plan before prompting after 9 AM',async()=>{
+ const ui=harness(new Map(),'2026-09-11T18:00:00Z');
+ const calls=[];let unlocked=false;
+ ui.window.PitchfordPlanner.init({hasPass:()=>unlocked,request:async p=>{calls.push(p);return {day:'2026-09-11',prompted:true,revision:2,tasks:[{title:'Already planned elsewhere',done:false,priority:false}]};}});
+ assert.equal(ui.get('planner-dialog').open,false);
+ ui.time('2026-09-11T18:00:30Z');await settle();
+ assert.equal(calls.length,0);assert.equal(ui.get('planner-dialog').open,false);
+ unlocked=true;ui.time('2026-09-11T18:01:00Z');await settle();
+ assert.equal(calls.length,1);assert.equal(ui.get('planner-dialog').open,false);
+ assert.equal(ui.get('planner-count').textContent,'0/1 done');
 });
 
 test('a second device shows the list planned on the first',async()=>{

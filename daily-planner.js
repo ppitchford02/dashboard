@@ -181,7 +181,9 @@
   window.PitchfordPlanner = {
     init(provided) {
       api = provided;
-      if (api.hasPass()) sync(); else { render(); maybePrompt(); }
+      // The local cache may be empty on this device while the shared day is
+      // already planned elsewhere. Wait for a server read before checking in.
+      if (api.hasPass()) sync(); else render();
     },
   };
 })();

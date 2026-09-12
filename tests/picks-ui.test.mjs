@@ -118,6 +118,34 @@ function pick(overrides = {}) {
 
 const desk = (picks = []) => ({ picks, checks: [], revisions: [] });
 
+test('source checks can be saved from the dashboard and failed notes remain editable', async () => {
+  const sent = [];
+  const checks = [];
+  let fail = true;
+  const ui = harness(async body => {
+    if (body.action === 'read') return { ...desk(), checks: checks.map(check => ({ ...check })) };
+    sent.push(JSON.parse(JSON.stringify(body)));
+    if (fail) throw new Error('Connection lost');
+    const check = { id: 'check-1', ...body, checkedAt: '2026-09-12T22:20:00Z' };
+    checks.unshift(check);
+    return { check };
+  });
+  await ui.get('picks-unlock').fire('click');
+  assert.equal(ui.get('picks-check-source').children.length, 6);
+  ui.get('picks-check-source').value = 'bat';
+  ui.get('picks-check-status').value = 'Needs review';
+  ui.get('picks-check-note').value = 'Caption cannot be verified from the visible post.';
+  await ui.get('picks-check-form').fire('submit');
+  assert.match(ui.get('picks-check-error').textContent, /Connection lost/);
+  assert.equal(ui.get('picks-check-note').value, 'Caption cannot be verified from the visible post.');
+  fail = false;
+  await ui.get('picks-check-form').fire('submit');
+  assert.equal(ui.get('picks-check-error').textContent, '');
+  assert.equal(ui.get('picks-check-note').value, '');
+  assert.deepEqual(sent.at(-1), { action: 'check', sourceId: 'bat', status: 'Needs review', note: 'Caption cannot be verified from the visible post.' });
+  assert.match(ui.get('picks-sources').textContent, /Caption cannot be verified/);
+});
+
 test('renders exactly six source tabs and collapses matching picks into one credited card', async () => {
   const randy = pick({ id: 'sbd-randy', sourceId: 'sbd', selection: 'Randy Arozarena — 1+ home run' });
   const sameRandy = pick({ id: 'bat-randy', sourceId: 'bat', selection: 'Randy Arozarena — home run', odds: 400 });

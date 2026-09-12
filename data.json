@@ -70,15 +70,6 @@
       "source_id": "4875804:dropbox:768069"
     },
     {
-      "title": "Cases Part 2 Problem Set",
-      "due": "2026-09-11T23:59",
-      "course": "Lawyering Analysis and Research",
-      "kind": "deadline",
-      "note": "dropbox",
-      "source": "law-plan",
-      "source_id": "4875802:dropbox:765439"
-    },
-    {
       "title": "Cumulative Self-Edit Checklist (Principles 1-4)",
       "due": "2026-09-13T23:59",
       "course": "Lawyering Analysis and Writing I",
@@ -86,6 +77,15 @@
       "note": "dropbox",
       "source": "law-plan",
       "source_id": "4875804:dropbox:786913"
+    },
+    {
+      "title": "Cases Part 2 Problem Set",
+      "due": "2026-09-11T23:59",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4875802:dropbox:765439"
     },
     {
       "title": "Citators Quiz",
@@ -104,6 +104,15 @@
       "note": "dropbox",
       "source": "law-plan",
       "source_id": "4875802:dropbox:765440"
+    },
+    {
+      "title": "State Statutes Problem Set",
+      "due": "2026-09-18T23:59",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4875802:dropbox:765441"
     },
     {
       "title": "Self-Evaluation 4",
@@ -133,15 +142,6 @@
       "source_id": "4875802:dropbox:765443"
     },
     {
-      "title": "State Statutes Problem Set",
-      "due": "2026-09-18T23:59",
-      "course": "Lawyering Analysis and Research",
-      "kind": "deadline",
-      "note": "dropbox",
-      "source": "law-plan",
-      "source_id": "4875802:dropbox:765441"
-    },
-    {
       "title": "Research Planning Problem Set",
       "due": "2026-09-23T23:59",
       "course": "Lawyering Analysis and Research",
@@ -149,6 +149,15 @@
       "note": "dropbox",
       "source": "law-plan",
       "source_id": "4875802:dropbox:765442"
+    },
+    {
+      "title": "Case File Practice Problem Set (Class 11)",
+      "due": "2026-09-25T23:59",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4875802:dropbox:765444"
     },
     {
       "title": "State Statutes Quiz",
@@ -178,6 +187,24 @@
       "source_id": "4875802:quiz:728829"
     },
     {
+      "title": "Additional Practice Problem: Essay on Federal Question Jurisdiction",
+      "due": "2026-09-13T23:59",
+      "course": "Civil Procedure - Federal Jurisdiction",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4863882:dropbox:763753"
+    },
+    {
+      "title": "Outline of Federal Question Jurisdiction",
+      "due": "2026-09-13T23:59",
+      "course": "Civil Procedure - Federal Jurisdiction",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4863882:dropbox:763758"
+    },
+    {
       "title": "Self-Evaluation 5",
       "due": "2026-09-24T18:30",
       "course": "Lawyering Analysis and Research",
@@ -203,15 +230,6 @@
       "note": "dropbox",
       "source": "law-plan",
       "source_id": "4875802:dropbox:765447"
-    },
-    {
-      "title": "Case File Practice Problem Set (Class 11)",
-      "due": "2026-09-25T23:59",
-      "course": "Lawyering Analysis and Research",
-      "kind": "deadline",
-      "note": "dropbox",
-      "source": "law-plan",
-      "source_id": "4875802:dropbox:765444"
     },
     {
       "title": "Case File Practice Problem Set (Class 12)",
@@ -248,24 +266,6 @@
       "note": "quiz",
       "source": "law-plan",
       "source_id": "4875802:quiz:728845"
-    },
-    {
-      "title": "Additional Practice Problem: Essay on Federal Question Jurisdiction",
-      "due": "2026-09-13T23:59",
-      "course": "Civil Procedure - Federal Jurisdiction",
-      "kind": "deadline",
-      "note": "dropbox",
-      "source": "law-plan",
-      "source_id": "4863882:dropbox:763753"
-    },
-    {
-      "title": "Outline of Federal Question Jurisdiction",
-      "due": "2026-09-13T23:59",
-      "course": "Civil Procedure - Federal Jurisdiction",
-      "kind": "deadline",
-      "note": "dropbox",
-      "source": "law-plan",
-      "source_id": "4863882:dropbox:763758"
     },
     {
       "title": "Question Presented and Brief Answer",

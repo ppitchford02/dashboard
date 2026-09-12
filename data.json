@@ -79,15 +79,6 @@
       "source_id": "4875804:dropbox:786913"
     },
     {
-      "title": "Cases Part 2 Problem Set",
-      "due": "2026-09-11T23:59",
-      "course": "Lawyering Analysis and Research",
-      "kind": "deadline",
-      "note": "dropbox",
-      "source": "law-plan",
-      "source_id": "4875802:dropbox:765439"
-    },
-    {
       "title": "Citators Quiz",
       "due": "2026-09-15T18:30",
       "course": "Lawyering Analysis and Research",
@@ -327,7 +318,7 @@
   "last_runs": [
     {
       "name": "Law School OS sweep",
-      "at": "2026-09-11T12:41:07-04:00",
+      "at": "2026-09-12T17:42:28-04:00",
       "meaning": "Last successful Brightspace capture, with date and timezone; not a preparation or delivery completion."
     },
     {
@@ -408,9 +399,9 @@
     ]
   },
   "law_school_status": {
-    "last_successful_capture": "2026-09-11T12:41:07-04:00",
+    "last_successful_capture": "2026-09-12T17:42:28-04:00",
     "deadline_source": "law plan",
-    "deadline_count": 29,
+    "deadline_count": 28,
     "schedule_timezone": "America/New_York",
     "schedule": [
       "09:00",

@@ -85,6 +85,7 @@
   $('built-at').textContent=dateText(D.built_at,{month:'short',day:'numeric'})+' at '+C.clock(D.built_at,TZ);
   if(!storageOK)$('storage-warning').hidden=false;
   window.PitchfordPicks.init(payload=>request(payload,'/picks'));
+  window.PitchfordParlay.init({loadPicks:()=>window.PitchfordPicks.read(),research:payload=>request(payload)});
   window.PitchfordPlanner.init({request:payload=>request(payload,'/planner'),hasPass:()=>!!sessionGet('dashpass')});
   tick();renderWeek();renderAgenda();renderAttention();renderCaptures();renderKit();renderNotes();renderHistory();renderSystems();renderLater();paintTimer();chooseView('today');
   setInterval(paintTimer,1000);setInterval(()=>{const before=C.dayKey(new Date(Date.now()-30000),TZ),after=C.dayKey(new Date(),TZ);tick();renderAttention();if(before!==after){selectedDay=after;renderWeek();}renderAgenda();},30000);

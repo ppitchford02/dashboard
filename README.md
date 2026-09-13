@@ -30,7 +30,7 @@ Systems shows the actual publishing run and distinguishes configured agent
 statuses from verified execution. No new background messages or notifications
 are scheduled; the daily routines adapt the open page.
 
-Front-end sources are `dashboard.css`, `dashboard-core.js`, `picks.js`,
+Front-end sources are `dashboard.css`, `dashboard-core.js`, `picks.js`, `parlay-builder.js`,
 `daily-planner.js`, and `dashboard.js`.
 The renderer embeds them in the page. Run `node --test tests/*.test.mjs` and
 `python3 -m unittest discover -s tests` before publication. The Worker provides
@@ -170,6 +170,15 @@ picks tools for reading, capture, checks, and the authorized migration.
 Source checks are scheduled separately in Codex at 11 AM, 3 PM, and 6 PM Eastern;
 the dashboard itself does not fetch social media or place bets. The open Picks
 tab is excluded from automatic page refresh so an unfinished entry is retained.
+
+The **Parlay Builder** button opens inside Sports Picks. For an Eastern game
+date, it reads the private picks desk and compares only confirmed, dated NFL
+anytime-touchdown selections with research from the existing web-enabled
+dashboard assistant. It sends the assistant short selection labels and source
+names, never original evidence, source URLs, or other private records. The result
+displays direct research links and labels the run incomplete if it lacks an
+official NFL link plus another source domain. Research runs on demand under the
+assistant's existing usage limits. The dashboard never submits a wager.
 
 ## Today's list
 

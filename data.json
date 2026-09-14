@@ -88,6 +88,24 @@
       "source_id": "4875802:dropbox:765440"
     },
     {
+      "title": "Citators Quiz",
+      "due": "2026-09-15T18:30",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "quiz",
+      "source": "law-plan",
+      "source_id": "4875802:quiz:728826"
+    },
+    {
+      "title": "Self-Evaluation 4",
+      "due": "2026-09-17T18:30",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "quiz",
+      "source": "law-plan",
+      "source_id": "4875802:quiz:728843"
+    },
+    {
       "title": "Midterm Exam- Requires Respondus LockDown Browser",
       "due": "2026-10-04T23:59",
       "course": "Civil Procedure - Federal Jurisdiction",
@@ -97,13 +115,13 @@
       "source_id": "4863882:quiz:726910"
     },
     {
-      "title": "Citators Quiz",
-      "due": "2026-09-15T18:30",
+      "title": "State Statutes Quiz",
+      "due": "2026-09-17T18:30",
       "course": "Lawyering Analysis and Research",
       "kind": "deadline",
       "note": "quiz",
       "source": "law-plan",
-      "source_id": "4875802:quiz:728826"
+      "source_id": "4875802:quiz:728828"
     },
     {
       "title": "State Statutes Problem Set",
@@ -131,15 +149,6 @@
       "note": "dropbox",
       "source": "law-plan",
       "source_id": "4863882:dropbox:763758"
-    },
-    {
-      "title": "Self-Evaluation 4",
-      "due": "2026-09-17T18:30",
-      "course": "Lawyering Analysis and Research",
-      "kind": "deadline",
-      "note": "quiz",
-      "source": "law-plan",
-      "source_id": "4875802:quiz:728843"
     },
     {
       "title": "Pre-Class Legal Analysis Assignment (Contract Formation)",
@@ -176,15 +185,6 @@
       "note": "dropbox",
       "source": "law-plan",
       "source_id": "4875802:dropbox:765444"
-    },
-    {
-      "title": "State Statutes Quiz",
-      "due": "2026-09-17T18:30",
-      "course": "Lawyering Analysis and Research",
-      "kind": "deadline",
-      "note": "quiz",
-      "source": "law-plan",
-      "source_id": "4875802:quiz:728828"
     },
     {
       "title": "Research Planning Quiz",

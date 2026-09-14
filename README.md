@@ -187,6 +187,22 @@ This checks stored evidence. The live post is not reopened.
 confirmed picks, never included in source records, and never used as Parlay
 Builder input.
 
+### Capturing a new pick
+
+Every **new** capture must show that its own source link was reopened once,
+immediately before saving. The save carries the exact link that was reopened and
+the time; a save without it, or with a link that does not match the pick's own
+source link, is refused. Nothing about this applies to existing records: imports
+and corrections carry no recheck and are accepted unchanged, so historical picks
+are never touched by the rule.
+
+The reopened post decides the record. Nobody classifies a pick by hand, not
+Preston and not an agent: the captured wording is read with the same cues used
+for reels, and a direct call saves ready to count, qualified wording saves as a
+Lean, and wording that states neither saves for review with the reason. An
+incomplete pick stays in review whatever the wording showed. On the capture form
+the class is shown but not editable, and it updates as the evidence is pasted.
+
 ### Reel intake
 
 `reel_transcripts` holds reel evidence privately: the transcript, transcription

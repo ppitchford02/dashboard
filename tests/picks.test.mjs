@@ -68,8 +68,15 @@ async function api(db, body, options = {}) {
   return {status: response.status, data, headers: response.headers};
 }
 
+// Every new capture must carry proof that its own source link was reopened first.
+// Historical records and imports are not subject to the rule, so those paths pass none.
+const capture = (pick, outcome = 'firm', reason = '') => ({
+  action: 'save', pick,
+  verification: {outcome, reason, checkedUrl: pick.sourceUrl, checkedAt: '2026-09-13T12:30:00Z'},
+});
+
 async function save(db, changes = {}) {
-  const result = await api(db, {action: 'save', pick: {...source, ...changes}});
+  const result = await api(db, capture({...source, ...changes}));
   assert.equal(result.status, 201, JSON.stringify(result.data));
   return result.data.pick;
 }
@@ -140,7 +147,7 @@ test('private capture persists evidence, incomplete alternatives need review, an
   assert.equal(captured.status, 'review');
   assert.equal(captured.originalText, source.originalText);
   assert.equal(captured.revision, 1);
-  const duplicate = await api(db, {action: 'save', pick: {...source, selection: '', event: '', eventDate: '', odds: null, sourceUrl: source.sourceUrl + '?tracking=1'}});
+  const duplicate = await api(db, capture({...source, selection: '', event: '', eventDate: '', odds: null, sourceUrl: source.sourceUrl + '?tracking=1'}));
   assert.equal(duplicate.status, 409);
   assert.equal(duplicate.data.duplicateId, captured.id);
   const list = await api(db, {action: 'read'});
@@ -168,7 +175,7 @@ test('settlement requires evidence; correction preserves originals and resets th
   assert.equal(corrected.data.pick.resultEvidence, '');
   assert.equal(corrected.data.pick.resultUrl, '');
   assert.equal(corrected.data.pick.originalText, captured.originalText);
-  const duplicateOriginal = await api(db, {action: 'save', pick: source});
+  const duplicateOriginal = await api(db, capture(source));
   assert.equal(duplicateOriginal.status, 409);
   const list = (await api(db, {action: 'read'})).data;
   assert.equal(list.revisions.length, 2);
@@ -223,7 +230,7 @@ test('database constraints block concurrent duplicate saves after both preflight
     db.beforeRun = null;
     await save(rival);
   };
-  const loser = await api(db, {action: 'save', pick: source});
+  const loser = await api(db, capture(source));
   assert.equal(loser.status, 409);
   assert.equal((await api(db, {action: 'read'})).data.picks.length, 1);
 });
@@ -252,7 +259,7 @@ test('authenticated migration preserves IDs, timestamps, original evidence and r
   assert.equal(repeated.status, 200);
   assert.deepEqual(repeated.data.imported, {picks: 0, checks: 0, revisions: 0});
   assert.deepEqual(repeated.data.skipped, {picks: 1, checks: 1, revisions: 1});
-  assert.equal((await api(target, {action: 'save', pick: source})).status, 409);
+  assert.equal((await api(target, capture(source))).status, 409);
   await api(target, {action: 'archive', id: captured.id, revision: 2, archived: true});
   assert.equal((await api(target, {action: 'import', desk})).status, 409);
   assert.equal((await api(target, {action: 'read'})).data.picks[0].archived, true);
@@ -303,7 +310,7 @@ test('the account is part of the original evidence and cannot be edited later', 
 test('one creator posting the same pick from two accounts is stored once', async () => {
   const db = database();
   await save(db, {sourceId: 'danny', accountId: account('danny', 0)});
-  const again = await api(db, {action: 'save', pick: {...source, sourceId: 'danny', accountId: account('danny', 1)}});
+  const again = await api(db, capture({...source, sourceId: 'danny', accountId: account('danny', 1)}));
   assert.equal(again.status, 409);
   assert.match(again.data.error, /already in your desk/);
   const stored = await api(db, {action: 'read'});
@@ -313,12 +320,12 @@ test('one creator posting the same pick from two accounts is stored once', async
 test('a new capture from a creator with several accounts must name the account', async () => {
   const db = database();
   const {accountId, ...withoutAccount} = source;
-  const missing = await api(db, {action: 'save', pick: withoutAccount});
+  const missing = await api(db, capture(withoutAccount));
   assert.equal(missing.status, 400);
   assert.match(missing.data.error, /which of this creator's accounts/);
   assert.equal((await api(db, {action: 'read'})).data.picks.length, 0);
   // A creator with a single account, and every import or correction, is unaffected.
-  const single = await api(db, {action: 'save', pick: {...withoutAccount, sourceId: 'stunad', sourceUrl: 'https://example.com/private-post/1'}});
+  const single = await api(db, capture({...withoutAccount, sourceId: 'stunad', sourceUrl: 'https://example.com/private-post/1'}));
   assert.equal(single.status, 201);
   assert.equal(single.data.pick.accountId, undefined);
   assert.equal(validatePickInput(withoutAccount).accountId, undefined);
@@ -365,15 +372,15 @@ test('a pick may only claim a reel it was actually spoken in', async () => {
   const base = {...source, sourceId: 'danny', accountId: account('danny', 1), sport: 'NFL', market: 'Moneyline',
     selection: 'Texans moneyline', event: 'Texans at Colts', originalText: reel.transcript,
     sourceUrl: 'https://example.com/private-reel/1/post'};
-  const wrongWords = await api(db, {action: 'save', pick: {...base, selection: 'Chiefs moneyline', transcriptId}});
+  const wrongWords = await api(db, capture({...base, selection: 'Chiefs moneyline', transcriptId}));
   assert.equal(wrongWords.status, 400);
   assert.match(wrongWords.data.error, /does not appear in the creator's spoken words/);
-  const wrongAccount = await api(db, {action: 'save', pick: {...base, accountId: account('danny', 2), transcriptId}});
+  const wrongAccount = await api(db, capture({...base, accountId: account('danny', 2), transcriptId}));
   assert.equal(wrongAccount.status, 400);
   assert.match(wrongAccount.data.error, /belongs to a different account/);
-  const unknown = await api(db, {action: 'save', pick: {...base, transcriptId: 'not-a-stored-transcript'}});
+  const unknown = await api(db, capture({...base, transcriptId: 'not-a-stored-transcript'}));
   assert.equal(unknown.status, 404);
-  const good = await api(db, {action: 'save', pick: {...base, transcriptId}});
+  const good = await api(db, capture({...base, transcriptId}));
   assert.equal(good.status, 201, JSON.stringify(good.data));
   assert.equal(good.data.pick.transcriptId, transcriptId);
   assert.equal(good.data.pick.kind, undefined, 'a firm pick stores no extra key');
@@ -382,10 +389,10 @@ test('a pick may only claim a reel it was actually spoken in', async () => {
 test('a lean is stored as a lean and historical picks keep no kind at all', async () => {
   const db = database();
   const transcriptId = (await api(db, {action: 'transcript', transcript: reel})).data.transcript.id;
-  const lean = await api(db, {action: 'save', pick: {...source, sourceId: 'danny', accountId: account('danny', 1),
+  const lean = await api(db, capture({...source, sourceId: 'danny', accountId: account('danny', 1),
     sport: 'NFL', market: 'Total', selection: 'Bengals over 42.5', event: 'Bengals at Buccaneers',
     originalText: reel.transcript, sourceUrl: 'https://example.com/private-reel/1/lean',
-    kind: 'lean', transcriptId}});
+    transcriptId}, 'lean'));
   assert.equal(lean.status, 201, JSON.stringify(lean.data));
   assert.equal(lean.data.pick.kind, 'lean');
   assert.throws(() => validatePickInput({...source, kind: 'probably'}), /firm or lean/);
@@ -446,4 +453,70 @@ test('the roster is served only to an authenticated read, exactly as configured'
   // Validation is driven by the configured roster, not by anything baked into the code.
   assert.equal(validatePickInput({...source, sourceId: 'danny', accountId: account('danny', 2)}).accountId, account('danny', 2));
   assert.throws(() => validatePickInput({...source, sourceId: 'not-in-this-roster'}), /a configured source/);
+});
+
+test('a new capture is refused unless its own source link was reopened first', async () => {
+  const db = database();
+  const bare = await api(db, {action: 'save', pick: source});
+  assert.equal(bare.status, 400);
+  assert.match(bare.data.error, /Reopen this pick's source link once before saving/);
+  const wrongLink = await api(db, {...capture(source), verification: {
+    outcome: 'firm', reason: '', checkedUrl: 'https://example.com/a-different-post', checkedAt: '2026-09-13T12:30:00Z'}});
+  assert.equal(wrongLink.status, 400);
+  assert.match(wrongLink.data.error, /does not match/);
+  for (const [changes, pattern] of [
+    [{outcome: 'probably'}, /firm, lean, or unclear/],
+    [{outcome: 'unclear', reason: ''}, /could not be confirmed/],
+    [{checkedUrl: ''}, /exact source link/],
+    [{checkedUrl: 'http://example.com/channels/1/2/3'}, /https/],
+    [{checkedAt: 'earlier today'}, /recheck time/],
+  ]) {
+    const result = await api(db, {...capture(source), verification: {
+      outcome: 'firm', reason: '', checkedUrl: source.sourceUrl, checkedAt: '2026-09-13T12:30:00Z', ...changes}});
+    assert.equal(result.status, 400, JSON.stringify(changes));
+    assert.match(result.data.error, pattern, JSON.stringify(changes));
+  }
+  assert.equal((await api(db, {action: 'read'})).data.picks.length, 0, 'nothing is saved without the recheck');
+});
+
+test('the reopened post decides the record, and the recheck is kept with it', async () => {
+  const db = database();
+  const complete = {...source, event: 'Test Away at Test Home', eventDate: '2026-09-13'};
+  const firm = await api(db, capture({...complete, sourceUrl: 'https://example.com/post/firm'}, 'firm'));
+  assert.equal(firm.status, 201);
+  assert.equal(firm.data.pick.status, 'pending', 'a confirmed firm call is saved ready to count');
+  assert.equal(firm.data.pick.kind, undefined);
+  assert.deepEqual(firm.data.pick.verification, {
+    outcome: 'firm', reason: '', checkedAt: '2026-09-13T12:30:00Z', checkedUrl: 'https://example.com/post/firm'});
+
+  const lean = await api(db, capture({...complete, sourceUrl: 'https://example.com/post/lean'}, 'lean'));
+  assert.equal(lean.data.pick.kind, 'lean', 'qualified wording is saved as a lean');
+  assert.equal(lean.data.pick.status, 'pending');
+
+  const unclear = await api(db, capture({...complete, sourceUrl: 'https://example.com/post/unclear'}, 'unclear', 'Post is no longer visible on the account.'));
+  assert.equal(unclear.data.pick.status, 'review', 'an unclear post saves for review');
+  assert.equal(unclear.data.pick.verification.reason, 'Post is no longer visible on the account.');
+
+  // An incomplete pick stays in review whatever the wording showed.
+  const thin = await api(db, capture({...source, event: '', sourceUrl: 'https://example.com/post/thin'}, 'firm'));
+  assert.equal(thin.data.pick.status, 'review');
+});
+
+test('the intake rule never touches historical records', async () => {
+  const db = database();
+  const saved = (await api(db, capture({...source, event: 'Test Away at Test Home'}, 'firm'))).data.pick;
+  // A correction carries no recheck and is accepted; the original one is preserved.
+  const corrected = await api(db, {action: 'edit', id: saved.id, revision: saved.revision,
+    reason: 'Corrected exact selection', pick: {...source, event: 'Test Away at Test Home', selection: 'Corrected Player'}});
+  assert.equal(corrected.status, 200, JSON.stringify(corrected.data));
+  assert.deepEqual(corrected.data.pick.verification, saved.verification);
+  // An import of records that predate the rule is accepted with no recheck at all.
+  const legacy = {...saved, id: 'legacy-record', selection: 'Legacy Player', sourceUrl: 'https://example.com/legacy', fingerprintless: undefined};
+  delete legacy.verification;
+  const target = database();
+  const imported = await api(target, {action: 'import', desk: {picks: [legacy], checks: [], revisions: []}});
+  assert.equal(imported.status, 200, JSON.stringify(imported.data));
+  const stored = (await api(target, {action: 'read'})).data.picks[0];
+  assert.equal('verification' in stored, false, 'a historical record gains nothing');
+  assert.equal('kind' in stored, false);
 });

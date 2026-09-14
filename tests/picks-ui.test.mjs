@@ -99,14 +99,15 @@ function harness(api) {
     },
     modelContext: { registerTool(tool) { tools.set(tool.name, tool); } },
   };
-  const context = vm.createContext({ document, navigator: {}, window: {} });
+  const opened = [];
+  const context = vm.createContext({ document, navigator: {}, window: { open: (url) => { opened.push(url); return null; } } });
   vm.runInContext(script, context, { filename: 'picks.js' });
   context.window.PitchfordPicks.init(api);
   const tool = name => {
     assert.ok(tools.has(name), `Tool ${name} was not registered`);
     return tools.get(name);
   };
-  return { get, fields, tool, context };
+  return { get, fields, tool, context, opened };
 }
 
 function pick(overrides = {}) {
@@ -199,7 +200,9 @@ test('capture sends exact valid odds or intentional null for an empty field', as
   for (const [value, expected] of [['+350', 350], [' -110 ', -110], ['', null]]) {
     await ui.get('picks-add').fire('click');
     ui.get('pick-account').value = account('danny', 0);
-    ui.fields.get('originalText').value = 'Example source evidence.';
+    ui.fields.get('originalText').value = 'Give me the example side tonight.';
+    ui.fields.get('sourceUrl').value = 'https://example.com/post/1';
+    await ui.get('pick-recheck').fire('click');
     ui.fields.get('odds').value = value;
     await ui.get('pick-form').fire('submit');
     assert.equal(sent.at(-1).odds, expected);
@@ -283,8 +286,10 @@ test('a creator’s accounts are selectable and captured under the one creator i
   assert.deepEqual(ui.get('pick-account').children.map(option => option.value), ['', account('danny', 0), account('danny', 1), account('danny', 2)]);
   assert.deepEqual(ui.get('pick-account').children.map(option => option.textContent), ['Select the account', ...ROSTER_LIST[0].accounts.map(entry => entry.platform)]);
   ui.get('pick-account').value = account('danny', 2);
-  ui.fields.get('originalText').value = 'Texans moneyline tonight.';
+  ui.fields.get('originalText').value = 'Give me Texans moneyline tonight.';
   ui.fields.get('selection').value = 'Texans';
+  ui.fields.get('sourceUrl').value = 'https://example.com/post/2';
+  await ui.get('pick-recheck').fire('click');
   await ui.get('pick-form').fire('submit');
   assert.equal(ui.get('pick-form-error').textContent, '');
   assert.equal(sent.at(-1).sourceId, 'danny');
@@ -360,8 +365,10 @@ test('the capture form requires an account when the creator has more than one', 
   await ui.get('picks-add').fire('click');
   assert.equal(ui.get('pick-account').value, '');
   assert.equal(ui.get('pick-account').children[0].textContent, 'Select the account');
-  ui.fields.get('originalText').value = 'Texans moneyline tonight.';
+  ui.fields.get('originalText').value = 'Give me Texans moneyline tonight.';
   ui.fields.get('selection').value = 'Texans';
+  ui.fields.get('sourceUrl').value = 'https://example.com/post/3';
+  await ui.get('pick-recheck').fire('click');
   const event = await ui.get('pick-form').fire('submit');
   assert.equal(event.defaultPrevented, true);
   assert.equal(calls, 0, 'a pick with no account must never reach the API');
@@ -484,4 +491,100 @@ test('leans are listed separately and never reach eligible picks or source recor
   const stored = JSON.parse(await ui.tool('dashboard_picks_read').execute({}));
   assert.deepEqual(stored.cleanList, ['Texans moneyline']);
   assert.deepEqual(stored.leans.map(item => item.text), ['Bengals–Buccaneers over 42.5']);
+});
+
+test('the capture form classifies the pasted wording itself and never asks Preston to choose', async () => {
+  const ui = harness(async () => desk());
+  await ui.get('picks-unlock').fire('click');
+  await ui.get('picks-add').fire('click');
+  assert.equal(ui.get('pick-kind').disabled, true, 'the class is derived, never chosen');
+  for (const [wording, label, kind] of [
+    ['Give me Texans moneyline tonight.', 'Firm pick', 'firm'],
+    ['The play is Cowboys -3.5.', 'Firm pick', 'firm'],
+    ['I would have to lean Bengals over 42.5.', 'Lean', 'lean'],
+    ['Maybe the Rams later, we will see.', 'Lean', 'lean'],
+    ['The weather could be a factor tonight.', 'Unclear', 'firm'],
+    ['Someone in the comments said take the Jets.', 'Unclear', 'firm'],
+  ]) {
+    ui.fields.get('originalText').value = wording;
+    await ui.fields.get('originalText').fire('input');
+    assert.equal(ui.get('pick-class-state').textContent.startsWith(label), true, `${wording} -> ${ui.get('pick-class-state').textContent}`);
+    assert.equal(ui.get('pick-kind').value, kind, wording);
+  }
+  assert.match(ui.get('pick-class-state').textContent, /Unclear .* Relays someone/);
+});
+
+test('a new capture cannot be saved until its own link is reopened once', async () => {
+  const sent = [];
+  const ui = harness(async body => {
+    if (body.action === 'read') return desk();
+    sent.push(JSON.parse(JSON.stringify(body)));
+    return { pick: pick({ ...body.pick }) };
+  });
+  await ui.get('picks-unlock').fire('click');
+  await ui.get('picks-add').fire('click');
+  ui.get('pick-account').value = account('danny', 0);
+  ui.fields.get('originalText').value = 'I would have to lean Bengals over 42.5.';
+  ui.fields.get('selection').value = 'Bengals over 42.5';
+  ui.fields.get('sourceUrl').value = 'https://example.com/post/9';
+
+  const blocked = await ui.get('pick-form').fire('submit');
+  assert.equal(blocked.defaultPrevented, true);
+  assert.equal(sent.length, 0, 'nothing reaches the API before the link is reopened');
+  assert.match(ui.get('pick-form-error').textContent, /Reopen this pick’s source link once before saving/);
+
+  await ui.get('pick-recheck').fire('click');
+  assert.deepEqual(ui.opened, ['https://example.com/post/9'], 'the exact link is what gets reopened');
+  assert.match(ui.get('pick-recheck-state').textContent, /^Reopened /);
+
+  // Changing the link after the check invalidates it; the old proof cannot carry over.
+  ui.fields.get('sourceUrl').value = 'https://example.com/post/10';
+  await ui.fields.get('sourceUrl').fire('input');
+  assert.match(ui.get('pick-recheck-state').textContent, /Not reopened yet/);
+  assert.equal((await ui.get('pick-form').fire('submit')).defaultPrevented, true);
+  assert.equal(sent.length, 0);
+
+  await ui.get('pick-recheck').fire('click');
+  await ui.get('pick-form').fire('submit');
+  assert.equal(ui.get('pick-form-error').textContent, '');
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].action, 'save');
+  assert.equal(sent[0].verification.outcome, 'lean', 'the wording decided it, not the operator');
+  assert.equal(sent[0].verification.checkedUrl, 'https://example.com/post/10');
+  assert.match(sent[0].verification.checkedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal('kind' in sent[0].pick, true);
+  assert.match(ui.get('picks-message').textContent, /saved as lean/);
+});
+
+test('a correction to an existing record is not subject to the intake rule', async () => {
+  const existing = pick({ id: 'old', sourceId: 'danny', sport: 'NFL', market: 'Moneyline', selection: 'Texans', event: 'Texans at Colts', originalText: 'Texans moneyline tonight.' });
+  const sent = [];
+  const ui = harness(async body => {
+    if (body.action === 'read') return desk([existing]);
+    sent.push(JSON.parse(JSON.stringify(body)));
+    return { pick: { ...existing, revision: 2 } };
+  });
+  await ui.get('picks-unlock').fire('click');
+  await ui.get('picks-list').children[0].fire('click');
+  await ui.get('pick-edit').fire('click');
+  assert.equal(ui.get('pick-recheck-row').hidden, true, 'no recheck is asked for on a correction');
+  assert.equal(ui.get('pick-class-state').textContent, 'Firm pick');
+  ui.fields.get('reason').value = 'Corrected the event name only.';
+  await ui.get('pick-form').fire('submit');
+  assert.equal(ui.get('pick-form-error').textContent, '');
+  assert.equal(sent.at(-1).action, 'edit');
+  assert.equal('verification' in sent.at(-1), false);
+  assert.deepEqual(ui.opened, [], 'nothing was reopened for a historical record');
+});
+
+test('the capture tool demands the reopened link and time up front', async () => {
+  const ui = harness(async () => desk());
+  const schema = ui.tool('dashboard_picks_capture').inputSchema;
+  assert.equal(schema.properties.checkedUrl.type, 'string');
+  assert.equal(schema.properties.checkedAt.type, 'string');
+  assert.equal(schema.required.includes('checkedUrl'), true);
+  assert.equal(schema.required.includes('checkedAt'), true);
+  assert.equal('kind' in schema.properties, false, 'an agent cannot assert a class');
+  assert.match(ui.tool('dashboard_picks_capture').description, /Reopen the pick’s exact source link once immediately before calling this/);
+  assert.match(ui.tool('dashboard_picks_capture').description, /derived from the captured wording, never chosen/);
 });

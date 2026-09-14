@@ -631,6 +631,11 @@ const PICK_ACTIONS = new Set(["read", "save", "check", "edit", "settle", "archiv
 const PICK_KINDS = new Set(["firm", "lean"]);
 // Audio only. Captions and viewer comments are not evidence and cannot create a pick.
 const TRANSCRIPT_MEDIUMS = new Set(["audio"]);
+// Every NEW capture must show that its own source link was reopened once, just
+// before saving. That check's outcome decides kind and status; nobody classifies a
+// pick by hand. Imports and corrections to existing records are not subject to it,
+// so historical records are never touched by this rule.
+const CAPTURE_OUTCOMES = new Set(["firm", "lean", "unclear"]);
 
 class PickError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -761,6 +766,28 @@ export function validateSettlementInput(input) {
 
 function pickComplete(pick) { return !!(pick.selection && pick.event && pick.eventDate); }
 
+export function validateCapture(input, sourceUrl) {
+  if (input === undefined || input === null) throw new PickError("Reopen this pick's source link once before saving it.");
+  const value = pickObject(input, "source recheck");
+  const outcome = pickChoice(value.outcome, CAPTURE_OUTCOMES, "firm, lean, or unclear");
+  const reason = pickText(value.reason === undefined ? "" : value.reason, "the reason", 500);
+  if (outcome === "unclear" && !reason) throw new PickError("Record why the reopened post could not be confirmed.");
+  const checkedUrl = pickUrl(value.checkedUrl);
+  if (!checkedUrl) throw new PickError("Record the exact source link that was reopened.");
+  if (checkedUrl !== sourceUrl) throw new PickError("Reopen this pick's own source link; the link that was checked does not match it.");
+  return { outcome, reason, checkedAt: pickTime(value.checkedAt, "recheck time"), checkedUrl };
+}
+
+// The reopened post decides the record. A firm call is saved ready to count, a
+// qualified one is saved as a lean, and anything unclear is saved for review with
+// its reason. An incomplete pick stays in review whatever the wording showed.
+function captureOutcome(pick, capture) {
+  return {
+    kind: capture.outcome === "lean" ? "lean" : "firm",
+    status: capture.outcome === "unclear" || !pickComplete(pick) ? "review" : "pending",
+  };
+}
+
 function validateStoredPick(input) {
   const value = pickObject(input, "imported pick"), base = validatePickInput(value);
   const settlement = validateSettlementInput(value);
@@ -773,6 +800,7 @@ function validateStoredPick(input) {
     revision: pickRevision(value.revision),
   };
   if (Date.parse(result.updatedAt) < Date.parse(result.createdAt)) throw new PickError("Update time cannot precede creation time.");
+  if (value.verification !== undefined) result.verification = validateCapture(value.verification, result.sourceUrl);
   return result;
 }
 
@@ -955,11 +983,17 @@ async function runPicksAction(body, db) {
     return picksReply({ transcript }, 201);
   }
   if (action === "save") {
-    const value = validatePickInput(body.pick, true), fingerprint = await pickFingerprint(value);
+    const raw = validatePickInput(body.pick, true);
+    const capture = validateCapture(body.verification, raw.sourceUrl);
+    const decided = captureOutcome(raw, capture);
+    // Revalidated with the derived kind so a saved record and an imported one
+    // serialize identically; the reopened post decides it, never the caller.
+    const value = validatePickInput({ ...body.pick, kind: decided.kind }, true);
+    const fingerprint = await pickFingerprint(value);
     await checkTranscriptEvidence(db, value);
     const duplicate = await db.prepare("SELECT id FROM picks WHERE owner=? AND (fingerprint=? OR original_fingerprint=?)").bind(PICKS_OWNER, fingerprint, fingerprint).first();
     if (duplicate) return picksReply({ error: "This pick is already in your desk.", duplicateId: duplicate.id }, 409);
-    const pick = { ...value, id: crypto.randomUUID(), status: pickComplete(value) ? "pending" : "review", resultEvidence: "", resultUrl: "", createdAt: now, updatedAt: now, archived: false, revision: 1 };
+    const pick = { ...value, id: crypto.randomUUID(), status: decided.status, resultEvidence: "", resultUrl: "", createdAt: now, updatedAt: now, archived: false, revision: 1, verification: capture };
     checkedResult(await insertPick(db, pick, fingerprint, fingerprint).run());
     return picksReply({ pick }, 201);
   }

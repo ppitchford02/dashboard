@@ -58,6 +58,10 @@ Live dashboard: https://ppitchford02.github.io/dashboard/
   It holds no creator roster; the roster arrives from the Worker after unlock.
 - `picks-roster.json`: local, gitignored, never committed. Its contents are the
   value of the `PICKS_ROSTER` Worker secret. Keep a copy somewhere safe.
+- `picks-agent-token.txt`: local, gitignored, never committed. One line holding the
+  same value as the `PICKS_AGENT_TOKEN` Worker secret. The scheduled Sports Picks
+  task reads it at fire time so the token never appears in a prompt or a
+  transcript. Delete it to stop automation on this machine.
 - `tests/fixtures/roster.json`: synthetic roster used by the tests. No real
   creator name, account identifier, or account link appears in this repository.
 - `schema-picks.sql`: private D1 picks tables and integrity constraints.
@@ -124,6 +128,9 @@ Cloudflare secrets:
 - `GITHUB_TOKEN`: fine-grained, this repo only, Contents read/write
 - `PICKS_ROSTER`: the private creator-account roster as JSON, set from the local
   `picks-roster.json`. Required by `/picks`; see Sports Picks below.
+- `PICKS_AGENT_TOKEN`: optional. A separate, revocable secret the scheduled
+  Sports Picks task authenticates with instead of the passphrase. At least 32
+  characters. Unset means automation simply cannot authenticate at all.
 
 Variables:
 - `ALLOWED_ORIGIN`: `https://ppitchford02.github.io`
@@ -203,6 +210,28 @@ Lean, and wording that states neither saves for review with the reason. An
 incomplete pick stays in review whatever the wording showed. On the capture form
 the class is shown but not editable, and it updates as the evidence is pasted.
 
+### Automation access
+
+The scheduled source check cannot type the dashboard passphrase, so it
+authenticates with `PICKS_AGENT_TOKEN`, a separate secret that is rotated or
+deleted on its own without affecting the passphrase. The passphrase flow is
+untouched: the token is consulted only when a passphrase was not supplied or did
+not match, and a passphrase request behaves exactly as it always has.
+
+The token is deliberately weaker than the passphrase. It permits `read`, `save`,
+`check` and `transcript` only. `edit`, `settle`, `archive` and `import` are
+refused with 403, so automation cannot correct, settle, archive, re-classify or
+overwrite an existing record — historical picks are out of reach at the
+authentication layer, not merely by instruction. New captures still have to carry
+a reopened source link like any other.
+
+A secret shorter than 32 characters, or an unset one, never matches, so a weak or
+missing token fails closed. Comparison is length-checked and constant-time. In
+the browser the token is supplied per page by the `dashboard_picks_automation_token`
+tool, held in memory for that page only, and never written to localStorage,
+sessionStorage, or anywhere else. To revoke automation, delete or rotate the
+secret in Cloudflare; nothing else changes.
+
 ### Reel intake
 
 `reel_transcripts` holds reel evidence privately: the transcript, transcription
@@ -257,7 +286,7 @@ sends `Cache-Control: no-store`. It does not invoke the assistant or write
 public repository content. Database updates reject duplicate picks and stale
 versions, and preserve original evidence. The browser registers only scoped
 picks tools for reading, capture, checks, and the authorized migration.
-Source checks are scheduled separately in Codex at 11 AM, 3 PM, and 6 PM Eastern;
+Source checks are scheduled separately in Codex at 11 AM and 5 PM Eastern;
 the dashboard itself does not fetch social media or place bets. The open Picks
 tab is excluded from automatic page refresh so an unfinished entry is retained.
 

@@ -10,6 +10,10 @@ index.html
 # Private creator roster. Deployed as the PICKS_ROSTER Worker secret, never tracked.
 picks-roster.json
 
+# The scheduled task's automation token, read at fire time and handed to the page.
+# Same value as the PICKS_AGENT_TOKEN Worker secret. Never tracked, never in a prompt.
+picks-agent-token.txt
+
 # Local timestamped backups and Graphify exports. Never published. Kept ignored so
 # deploy.sh's "git add -A" can never sweep a pre-migration copy of the roster in.
 backups/

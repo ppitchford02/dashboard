@@ -626,6 +626,11 @@ const PICK_STATUSES = new Set(["pending", "review", "win", "loss", "push", "void
 const PICK_RESULTS = new Set(["win", "loss", "push", "void"]);
 const CHECK_STATUSES = new Set(["Checked", "No new posts", "Sign-in needed", "Access blocked", "Needs review"]);
 const PICK_ACTIONS = new Set(["read", "save", "check", "edit", "settle", "archive", "import", "transcript"]);
+// The scheduled task authenticates with its own revocable secret instead of the
+// dashboard passphrase. It may only read, capture new picks, record source checks,
+// and store reel evidence. Corrections, results, archiving and imports are not on
+// this list, so automation cannot reach an existing record at all.
+const AGENT_ACTIONS = new Set(["read", "save", "check", "transcript"]);
 // A selection is firm only when the creator stated it outright. Qualified wording
 // stays a lean: visible, never counted as a confirmed pick or parlay input.
 const PICK_KINDS = new Set(["firm", "lean"]);
@@ -639,6 +644,16 @@ const CAPTURE_OUTCOMES = new Set(["firm", "lean", "unclear"]);
 
 class PickError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
+}
+
+// Length-checked and compared without an early exit. A short or unset secret never
+// matches, so a weak or missing token fails closed rather than granting access.
+function secretMatches(supplied, secret) {
+  if (typeof supplied !== "string" || typeof secret !== "string") return false;
+  if (secret.length < 32 || supplied.length !== secret.length) return false;
+  let difference = 0;
+  for (let index = 0; index < secret.length; index++) difference |= supplied.charCodeAt(index) ^ secret.charCodeAt(index);
+  return difference === 0;
 }
 
 function picksHeaders() {
@@ -1050,7 +1065,12 @@ export async function handlePicksRequest(request, env) {
     let body;
     try { body = JSON.parse(raw); } catch { return picksReply({ error: "Invalid request." }, 400); }
     pickObject(body, "request");
-    if (typeof body.pass !== "string" || !env.DASH_PASSPHRASE || body.pass !== env.DASH_PASSPHRASE) return picksReply({ error: "Unlock Sports Picks with your dashboard passphrase." }, 401);
+    // The passphrase flow is unchanged. The automation token is only consulted when
+    // the passphrase was not supplied or did not match.
+    const byPassphrase = typeof body.pass === "string" && !!env.DASH_PASSPHRASE && body.pass === env.DASH_PASSPHRASE;
+    const byToken = !byPassphrase && secretMatches(body.agentToken, env.PICKS_AGENT_TOKEN);
+    if (!byPassphrase && !byToken) return picksReply({ error: "Unlock Sports Picks with your dashboard passphrase." }, 401);
+    if (byToken && !AGENT_ACTIONS.has(body.action)) return picksReply({ error: "The automation token may only read, capture new picks, and record checks. Corrections, results, archiving and imports need the dashboard passphrase." }, 403);
     if (typeof env.PICKS_ROSTER !== "string" || !env.PICKS_ROSTER.trim()) return picksReply({ error: "The creator roster secret is not configured for this Worker." }, 503);
     loadRoster(env.PICKS_ROSTER);
     const origin = request.headers.get("origin");

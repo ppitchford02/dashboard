@@ -15,9 +15,12 @@ function setRoster(list){
 }
 function fillSourceSelects(){for(const id of ['pick-source','picks-check-source']){const host=$(id);host.replaceChildren();for(const creator of SOURCES){const option=el('option','',creator.name);option.value=creator.id;host.append(option);}}}
 const MARKETS=['Home run','Moneyline','Spread','Total','Player prop','Other'],labels={pending:'Open',review:'Needs review',win:'Win',loss:'Loss',push:'Push',void:'Void'};
-let request,desk={picks:[],checks:[],revisions:[]},loaded=false,busy=false,editing=null,current=null,activeSource='',held=[];
+let request,desk={picks:[],checks:[],revisions:[]},loaded=false,busy=false,editing=null,current=null,activeSource='',held=[],agentToken=null;
 const source=id=>SOURCES.find(s=>s.id===id),date=s=>s?new Date(s+'T12:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}):'Date not confirmed',when=s=>s?new Date(s).toLocaleString():'Not given',signed=n=>(n>0?'+':'')+n.toFixed(2),odds=n=>n===null?'Odds not given':n>0?'+'+n:String(n);
 const account=id=>ACCOUNTS.find(a=>a.id===id),accountsFor=id=>(source(id)?.accounts||[]);
+// Held in memory for this page only, never in localStorage or sessionStorage, and
+// never written anywhere. Without it every request uses the passphrase as before.
+const send=body=>request(agentToken?{...body,agentToken}:body);
 function el(tag,cls,text){const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;}
 function note(text,error=false){$('picks-message').hidden=!text;$('picks-message').textContent=text;$('picks-message').classList.toggle('error',error);}
 function syncWarning(text=''){const n=$('picks-sync-warning');n.hidden=!text;n.textContent=text;}
@@ -129,18 +132,18 @@ function reopenSource(){const url=field('sourceUrl').value.trim();
   recheck={checkedUrl:url,checkedAt:new Date().toISOString()};
   showRecheck();}
 function state(value){busy=value;document.querySelectorAll('#view-picks button,#pick-dialog button,#pick-detail button').forEach(b=>b.disabled=value);}
-async function load(){if(busy)return false;state(true);note('');try{const data=await request({action:'read'});if(!data)return false;desk=data;setRoster(data.roster);loaded=true;$('picks-content').hidden=false;$('picks-locked').hidden=true;syncWarning();render();return true;}catch(e){note(e.message,true);return false;}finally{state(false);}}
+async function load(){if(busy)return false;state(true);note('');try{const data=await send({action:'read'});if(!data)return false;desk=data;setRoster(data.roster);loaded=true;$('picks-content').hidden=false;$('picks-locked').hidden=true;syncWarning();render();return true;}catch(e){note(e.message,true);return false;}finally{state(false);}}
 async function change(body){
   if(busy)throw new Error('Wait for the current save to finish.');
   state(true);
   try{
-    const result=await request(body);
+    const result=await send(body);
     if(!result)throw new Error('Unlock your picks to continue.');
     if(result.pick){const i=desk.picks.findIndex(p=>p.id===result.pick.id);if(i<0)desk.picks.unshift(result.pick);else desk.picks[i]=result.pick;}
     if(result.check)desk.checks.unshift(result.check);
     let refreshWarning='';
     try{
-      const data=await request({action:'read'});
+      const data=await send({action:'read'});
       if(!data)throw new Error('Sign-in was canceled.');
       desk=data;setRoster(data.roster);loaded=true;$('picks-content').hidden=false;$('picks-locked').hidden=true;syncWarning();
     }catch(e){refreshWarning='Saved successfully, but the full list could not refresh. Use Refresh before reviewing totals or history.';syncWarning(refreshWarning);}
@@ -185,7 +188,8 @@ add('dashboard_reel_intake','Store one reel transcript as private evidence and r
   return JSON.stringify({transcriptId:result.transcript.id,reused:!!result.reused,...extractFromTranscript(text)});});
 add('dashboard_picks_capture','Save one original source pick or unresolved caption to the private dashboard. Never invent odds, selection, event, or date. Unknown fields empty, odds null. accountId names which of the creator’s verified accounts it came from; leave it empty when unknown. Reopen the pick’s exact source link once immediately before calling this, then pass that same link as checkedUrl and the time as checkedAt; a save without them is refused. Firm, lean, or unclear is derived from the captured wording, never chosen by you or by Preston. transcriptId ties the pick to a stored reel transcript; the selection must appear in that transcript. Historical/uncertain timing must use capturedBeforeStart=false. Places no bet.',{type:'object',properties:{...properties,accountId:{type:'string'},transcriptId:{type:'string'},checkedUrl:{type:'string'},checkedAt:{type:'string'}},required:[...Object.keys(properties),'checkedUrl','checkedAt'],additionalProperties:false},async p=>{const {checkedUrl,checkedAt,...pick}=p;
   const derived=classify(pick.originalText||'');
-  return JSON.stringify(await change({action:'save',pick,verification:{...derived,checkedUrl:checkedUrl||'',checkedAt:checkedAt||''}}));});add('dashboard_picks_source_check','Record an actual check of a configured source, including extraction or access blockers. Creator and account ids come from dashboard_picks_read; the page holds no roster until it is unlocked.',{type:'object',properties:{sourceId:properties.sourceId,status:{type:'string',enum:['Checked','No new posts','Sign-in needed','Access blocked','Needs review']},note:{type:'string'}},required:['sourceId','status','note']},async p=>JSON.stringify(await change({action:'check',...p})));add('dashboard_picks_import','Import Preston’s existing Picks Desk records into his integrated private dashboard, preserving original IDs, timestamps, and history. Only use for the user-authorized migration; never fabricate imported records.',{type:'object',properties:{desk:{type:'object',properties:{picks:{type:'array',items:{type:'object'}},checks:{type:'array',items:{type:'object'}},revisions:{type:'array',items:{type:'object'}}},required:['picks','checks','revisions']}},required:['desk']},async p=>JSON.stringify(await change({action:'import',desk:p.desk})));}
+  return JSON.stringify(await change({action:'save',pick,verification:{...derived,checkedUrl:checkedUrl||'',checkedAt:checkedAt||''}}));});add('dashboard_picks_source_check','Record an actual check of a configured source, including extraction or access blockers. Creator and account ids come from dashboard_picks_read; the page holds no roster until it is unlocked.',{type:'object',properties:{sourceId:properties.sourceId,status:{type:'string',enum:['Checked','No new posts','Sign-in needed','Access blocked','Needs review']},note:{type:'string'}},required:['sourceId','status','note']},async p=>JSON.stringify(await change({action:'check',...p})));add('dashboard_picks_automation_token','Authenticate this page with the scheduled task’s automation token instead of Preston’s dashboard passphrase, then load the desk. The token is kept in memory for this page only and is never stored. It permits reading, capturing new picks, recording source checks and storing reel evidence; corrections, results, archiving and imports stay passphrase-only. Never print, log, or repeat the token.',{type:'object',properties:{token:{type:'string'}},required:['token'],additionalProperties:false},async p=>{const supplied=String(p.token||'').trim();if(!supplied)throw new Error('No automation token was supplied.');agentToken=supplied;if(!await load()){agentToken=null;throw new Error('The automation token was not accepted. The desk stays locked.');}return JSON.stringify({authenticated:'automation token',creators:SOURCES.length,picks:desk.picks.length});});
+add('dashboard_picks_import','Import Preston’s existing Picks Desk records into his integrated private dashboard, preserving original IDs, timestamps, and history. Only use for the user-authorized migration; never fabricate imported records.',{type:'object',properties:{desk:{type:'object',properties:{picks:{type:'array',items:{type:'object'}},checks:{type:'array',items:{type:'object'}},revisions:{type:'array',items:{type:'object'}}},required:['picks','checks','revisions']}},required:['desk']},async p=>JSON.stringify(await change({action:'import',desk:p.desk})));}
 }
 window.PitchfordPicks={init,open:()=>{if(loaded)render();},read:async()=>{if(!await load())throw new Error('Unlock Sports Picks or check the connection and try again.');return desk;},stats,groupPicks,cleanList,leanList,verify:confirmPick,plainLine,classify,sources:()=>SOURCES,extractFromTranscript,transcribers:TRANSCRIBERS};
 })();

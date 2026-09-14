@@ -588,3 +588,42 @@ test('the capture tool demands the reopened link and time up front', async () =>
   assert.match(ui.tool('dashboard_picks_capture').description, /Reopen the pick’s exact source link once immediately before calling this/);
   assert.match(ui.tool('dashboard_picks_capture').description, /derived from the captured wording, never chosen/);
 });
+
+test('the automation tool loads the desk with a token and never asks for the passphrase', async () => {
+  const seen = [];
+  const ui = harness(async body => {
+    seen.push(JSON.parse(JSON.stringify(body)));
+    if (body.action === 'read') return desk([pick({ id: 'existing' })]);
+    return { pick: pick({ ...body.pick }) };
+  });
+  const result = JSON.parse(await ui.tool('dashboard_picks_automation_token').execute({ token: 'test-automation-token-0123456789abcdef' }));
+  assert.equal(result.authenticated, 'automation token');
+  assert.equal(result.creators, PICK_ROSTER.length);
+  assert.equal(result.picks, 1);
+  assert.equal(seen[0].agentToken, 'test-automation-token-0123456789abcdef', 'the token rides on the request');
+  assert.equal('pass' in seen[0], false, 'the page never supplies a passphrase for automation');
+  assert.equal(ui.tool('dashboard_picks_automation_token').annotations.readOnlyHint, false, 'the automation tool writes, so it is not read-only');
+  assert.match(ui.tool('dashboard_picks_automation_token').description, /never printed|Never print/);
+
+  // Every later call carries the token too, including a capture.
+  await ui.get('picks-add').fire('click');
+  ui.get('pick-account').value = account('danny', 0);
+  ui.fields.get('originalText').value = 'Give me the example side tonight.';
+  ui.fields.get('selection').value = 'Example side';
+  ui.fields.get('sourceUrl').value = 'https://example.com/post/agent';
+  await ui.get('pick-recheck').fire('click');
+  await ui.get('pick-form').fire('submit');
+  const save = seen.find(body => body.action === 'save');
+  assert.equal(save.agentToken, 'test-automation-token-0123456789abcdef');
+  assert.equal(save.verification.checkedUrl, 'https://example.com/post/agent');
+});
+
+test('a rejected automation token leaves the desk locked and keeps nothing', async () => {
+  const ui = harness(async () => null);
+  await assert.rejects(
+    ui.tool('dashboard_picks_automation_token').execute({ token: 'a-token-the-worker-will-not-accept' }),
+    /was not accepted/,
+  );
+  await assert.rejects(ui.tool('dashboard_picks_automation_token').execute({ token: '   ' }), /No automation token/);
+  assert.equal(ui.get('picks-content').hidden, true, 'the desk stays locked');
+});

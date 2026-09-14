@@ -150,11 +150,13 @@ class PrivateRosterTests(unittest.TestCase):
         for host in self.HOSTS:
             self.assertNotIn(host, worker)
 
-    def test_the_secret_file_is_ignored_and_never_tracked(self):
-        # Checked by path, so this passes whether or not the local file is present.
-        ignored = subprocess.run(["git", "check-ignore", "picks-roster.json"], cwd=HERE, capture_output=True, text=True)
-        self.assertEqual(ignored.returncode, 0, "picks-roster.json must be gitignored")
-        self.assertNotIn("picks-roster.json", self.tracked_files())
+    def test_the_secret_files_are_ignored_and_never_tracked(self):
+        # Checked by path, so this passes whether or not the local files are present.
+        tracked = self.tracked_files()
+        for name in ("picks-roster.json", "picks-agent-token.txt"):
+            ignored = subprocess.run(["git", "check-ignore", name], cwd=HERE, capture_output=True, text=True)
+            self.assertEqual(ignored.returncode, 0, f"{name} must be gitignored")
+            self.assertNotIn(name, tracked)
 
     def test_the_roster_fixture_is_synthetic(self):
         roster = json.loads((HERE / "tests" / "fixtures" / "roster.json").read_text(encoding="utf-8"))

@@ -61,7 +61,7 @@ async function api(db, body, options = {}) {
   const request = new Request('https://worker.example/picks', {
     method: options.method || 'POST',
     headers: {'content-type': 'application/json', origin: ORIGIN, ...options.headers},
-    ...(options.method && options.method !== 'POST' ? {} : {body: JSON.stringify({pass: PASS, ...body})}),
+    ...(options.method && options.method !== 'POST' ? {} : {body: JSON.stringify(options.agent ? body : {pass: PASS, ...body})}),
   });
   const response = await worker.fetch(request, {DASH_PASSPHRASE: PASS, PICKS_ROSTER: ROSTER, PICKS_DB: db, ...options.env});
   const data = response.status === 204 ? null : await response.json();
@@ -519,4 +519,62 @@ test('the intake rule never touches historical records', async () => {
   const stored = (await api(target, {action: 'read'})).data.picks[0];
   assert.equal('verification' in stored, false, 'a historical record gains nothing');
   assert.equal('kind' in stored, false);
+});
+
+// A separate, revocable secret for the scheduled task. Test value only.
+const AGENT = 'test-automation-token-0123456789abcdef';
+
+test('the automation token authenticates without the passphrase and only for its own actions', async () => {
+  const db = database();
+  const asAgent = (body, token = AGENT) => api(db, {...body, agentToken: token}, {env: {PICKS_AGENT_TOKEN: AGENT}, agent: true});
+  const opened = await asAgent({action: 'read'});
+  assert.equal(opened.status, 200, JSON.stringify(opened.data));
+  assert.equal(opened.data.roster.length, ROSTER_LIST.length);
+  const complete = {...source, event: 'Test Away at Test Home', sourceUrl: 'https://example.com/agent/1'};
+  const saved = await asAgent(capture(complete, 'firm'));
+  assert.equal(saved.status, 201, JSON.stringify(saved.data));
+  assert.equal((await asAgent({action: 'check', sourceId: 'nick', status: 'Checked', note: 'Scheduled pass.'})).status, 200);
+
+  // Everything that could reach an existing record is refused for the token.
+  for (const body of [
+    {action: 'edit', id: saved.data.pick.id, revision: 1, reason: 'Attempted correction', pick: complete},
+    {action: 'settle', id: saved.data.pick.id, revision: 1, status: 'win', resultEvidence: 'x', resultUrl: ''},
+    {action: 'archive', id: saved.data.pick.id, revision: 1, archived: true},
+    {action: 'import', desk: {picks: [], checks: [], revisions: []}},
+  ]) {
+    const refused = await asAgent(body);
+    assert.equal(refused.status, 403, body.action);
+    assert.match(refused.data.error, /need the dashboard passphrase/, body.action);
+  }
+  const untouched = (await asAgent({action: 'read'})).data.picks.find(row => row.id === saved.data.pick.id);
+  assert.equal(untouched.revision, 1, 'no existing record moved');
+  assert.equal(untouched.status, 'pending');
+});
+
+test('a wrong, short, or unset automation secret grants nothing', async () => {
+  const db = database();
+  for (const [env, token] of [
+    [{PICKS_AGENT_TOKEN: AGENT}, 'the-wrong-token-0123456789abcdefg'],
+    [{PICKS_AGENT_TOKEN: AGENT}, AGENT.slice(0, -1)],
+    [{PICKS_AGENT_TOKEN: AGENT}, ''],
+    [{PICKS_AGENT_TOKEN: 'too-short-to-be-a-secret'}, 'too-short-to-be-a-secret'],
+    [{PICKS_AGENT_TOKEN: ''}, ''],
+    [{}, AGENT],
+  ]) {
+    const result = await api(db, {action: 'read', agentToken: token}, {env, agent: true});
+    assert.equal(result.status, 401, JSON.stringify({token, env}));
+    assert.equal(result.data.roster, undefined, 'a rejected caller learns no creator');
+  }
+});
+
+test('the passphrase flow is unchanged and still has full access', async () => {
+  const db = database();
+  const saved = await save(db);
+  assert.equal((await api(db, {action: 'archive', id: saved.id, revision: 1, archived: true})).status, 200);
+  assert.equal((await api(db, {action: 'read'})).status, 200);
+  // A passphrase request is never affected by the automation secret's presence.
+  assert.equal((await api(db, {action: 'read'}, {env: {PICKS_AGENT_TOKEN: AGENT}})).status, 200);
+  // And a bad passphrase is still refused even when a valid token exists elsewhere.
+  const wrong = await api(db, {action: 'read'}, {env: {DASH_PASSPHRASE: 'a-different-passphrase', PICKS_AGENT_TOKEN: AGENT}});
+  assert.equal(wrong.status, 401);
 });

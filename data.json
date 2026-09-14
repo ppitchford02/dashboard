@@ -295,7 +295,7 @@
   "last_runs": [
     {
       "name": "Law School OS sweep",
-      "at": "2026-09-14T09:40:16-04:00",
+      "at": "2026-09-14T12:01:37-04:00",
       "meaning": "Last successful Brightspace capture, with date and timezone; not a preparation or delivery completion."
     },
     {
@@ -376,7 +376,7 @@
     ]
   },
   "law_school_status": {
-    "last_successful_capture": "2026-09-14T09:40:16-04:00",
+    "last_successful_capture": "2026-09-14T12:01:37-04:00",
     "deadline_source": "law plan",
     "deadline_count": 26,
     "schedule_timezone": "America/New_York",

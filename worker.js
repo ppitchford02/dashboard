@@ -583,12 +583,54 @@ function json(obj, status, origin) {
 
 const PICKS_ORIGIN = "https://ppitchford02.github.io";
 const PICKS_OWNER = "dashboard-owner";
-const PICK_SOURCES = new Set(["sbd", "bat", "stunad", "danny", "nick", "cru"]);
+// The creator roster is a deployment secret (PICKS_ROSTER), never a tracked file.
+// Without it this path refuses every action rather than running unvalidated.
+let PICK_ROSTER = [], PICK_SOURCES = new Set(), PICK_ACCOUNTS = {}, rosterSource = null;
+
+export function loadRoster(raw) {
+  if (raw === rosterSource) return PICK_ROSTER;
+  const reject = message => { throw new PickError("The creator roster is not configured correctly: " + message, 503); };
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch { reject("the secret is not valid JSON."); }
+  if (!Array.isArray(parsed) || !parsed.length) reject("the secret holds no creators.");
+  const creators = [], creatorIds = new Set(), accountIds = new Set();
+  for (const creator of parsed) {
+    if (!creator || typeof creator !== "object") reject("a creator entry is not an object.");
+    if (typeof creator.id !== "string" || !/^[a-z0-9-]{1,32}$/.test(creator.id)) reject("a creator id is invalid.");
+    if (creatorIds.has(creator.id)) reject("a creator id is repeated.");
+    if (typeof creator.name !== "string" || !creator.name.trim()) reject("a creator has no name.");
+    if (!Array.isArray(creator.accounts) || !creator.accounts.length) reject("a creator has no accounts.");
+    const accounts = [];
+    for (const account of creator.accounts) {
+      if (!account || typeof account !== "object") reject("an account entry is not an object.");
+      if (typeof account.id !== "string" || !/^[a-z0-9-]{1,64}$/.test(account.id)) reject("an account id is invalid.");
+      if (accountIds.has(account.id)) reject("an account id is repeated.");
+      if (typeof account.platform !== "string" || !account.platform.trim()) reject("an account has no platform.");
+      if (typeof account.url !== "string" || !account.url.startsWith("https://")) reject("an account has no https link.");
+      accountIds.add(account.id);
+      accounts.push({ id: account.id, platform: account.platform, url: account.url });
+    }
+    creatorIds.add(creator.id);
+    creators.push({ id: creator.id, name: creator.name, accounts });
+  }
+  PICK_ROSTER = creators;
+  PICK_SOURCES = creatorIds;
+  PICK_ACCOUNTS = Object.fromEntries(creators.map(creator => [creator.id, new Set(creator.accounts.map(account => account.id))]));
+  rosterSource = raw;
+  return PICK_ROSTER;
+}
+// A creator may post from several accounts. The account is recorded inside the
+// pick data only; source_id stays the creator id, so no stored row or CHECK changes.
 const PICK_MARKETS = new Set(["Home run", "Moneyline", "Spread", "Total", "Player prop", "Other"]);
 const PICK_STATUSES = new Set(["pending", "review", "win", "loss", "push", "void"]);
 const PICK_RESULTS = new Set(["win", "loss", "push", "void"]);
 const CHECK_STATUSES = new Set(["Checked", "No new posts", "Sign-in needed", "Access blocked", "Needs review"]);
-const PICK_ACTIONS = new Set(["read", "save", "check", "edit", "settle", "archive", "import"]);
+const PICK_ACTIONS = new Set(["read", "save", "check", "edit", "settle", "archive", "import", "transcript"]);
+// A selection is firm only when the creator stated it outright. Qualified wording
+// stays a lean: visible, never counted as a confirmed pick or parlay input.
+const PICK_KINDS = new Set(["firm", "lean"]);
+// Audio only. Captions and viewer comments are not evidence and cannot create a pick.
+const TRANSCRIPT_MEDIUMS = new Set(["audio"]);
 
 class PickError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -666,10 +708,25 @@ function pickUrl(value) {
   return text;
 }
 
-export function validatePickInput(input) {
+function pickAccount(value, sourceId, required) {
+  if (value === undefined || value === null || value === "") {
+    // Required only for new captures from a creator with more than one account.
+    // Historical records and imports keep whatever they were saved with.
+    if (required && PICK_ACCOUNTS[sourceId]?.size > 1) throw new PickError("Choose which of this creator's accounts this pick came from.");
+    return "";
+  }
+  if (typeof value !== "string" || !PICK_ACCOUNTS[sourceId]?.has(value)) throw new PickError("Choose an account that belongs to this creator.");
+  return value;
+}
+
+export function validatePickInput(input, requireAccount = false) {
   const value = pickObject(input, "pick");
+  const sourceId = pickChoice(value.sourceId, PICK_SOURCES, "a configured source");
+  const accountId = pickAccount(value.accountId, sourceId, requireAccount);
+  const kind = value.kind === undefined || value.kind === "" ? "firm" : pickChoice(value.kind, PICK_KINDS, "firm or lean");
+  const transcriptId = value.transcriptId === undefined || value.transcriptId === "" ? "" : pickId(value.transcriptId);
   const pick = {
-    sourceId: pickChoice(value.sourceId, PICK_SOURCES, "a configured source"),
+    sourceId,
     sport: pickChoice(value.sport, new Set(["MLB", "NFL"]), "MLB or NFL"),
     market: pickChoice(value.market, PICK_MARKETS, "a market"),
     selection: pickText(value.selection, "selection", 500),
@@ -683,6 +740,11 @@ export function validatePickInput(input) {
   };
   if (pick.odds !== null && (!Number.isInteger(pick.odds) || Math.abs(pick.odds) < 100 || Math.abs(pick.odds) > 100000)) throw new PickError("American odds must be +100 or greater, or -100 or lower, up to 100,000.");
   if (pick.market === "Home run" && pick.sport !== "MLB") throw new PickError("Home-run picks must use MLB.");
+  // Only recorded when known, so picks saved before creator accounts existed keep
+  // byte-identical stored data and revision snapshots.
+  if (accountId) pick.accountId = accountId;
+  if (kind !== "firm") pick.kind = kind;
+  if (transcriptId) pick.transcriptId = transcriptId;
   return pick;
 }
 
@@ -730,7 +792,7 @@ function pickFromRow(row) {
 }
 
 function originalPickMatches(a, b) {
-  return a.sourceId === b.sourceId && a.sourceUrl === b.sourceUrl && a.originalText === b.originalText;
+  return a.sourceId === b.sourceId && (a.accountId || "") === (b.accountId || "") && (a.transcriptId || "") === (b.transcriptId || "") && a.sourceUrl === b.sourceUrl && a.originalText === b.originalText;
 }
 
 function checkedResult(result) {
@@ -752,6 +814,44 @@ function validateSourceCheck(input, importing = false) {
 function insertPick(db, pick, fingerprint, originalFingerprint) {
   return db.prepare("INSERT INTO picks(id,owner,source_id,fingerprint,original_fingerprint,data,archived,revision,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)")
     .bind(pick.id, PICKS_OWNER, pick.sourceId, fingerprint, originalFingerprint, JSON.stringify(pick), Number(pick.archived), pick.revision, pick.createdAt, pick.updatedAt);
+}
+
+export function spokenIn(transcript, selection) {
+  const normalize = text => String(text || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  const spoken = normalize(transcript), words = normalize(selection).split(" ").filter(word => word.length > 2);
+  if (!words.length || !spoken) return false;
+  return words.every(word => spoken.includes(word));
+}
+
+export function validateTranscript(input) {
+  const value = pickObject(input, "transcript");
+  const sourceId = pickChoice(value.sourceId, PICK_SOURCES, "a configured source");
+  const accountId = pickAccount(value.accountId, sourceId, true);
+  if (!accountId) throw new PickError("Name the account this reel came from.");
+  const sourceUrl = pickUrl(value.sourceUrl);
+  if (!sourceUrl) throw new PickError("Record the link to the reel.");
+  return {
+    id: crypto.randomUUID(), sourceId, accountId, sourceUrl,
+    medium: pickChoice(value.medium, TRANSCRIPT_MEDIUMS, "audio; captions and viewer comments are not a source"),
+    engine: pickText(value.engine, "the transcription engine", 120, 1),
+    transcript: pickText(value.transcript, "the transcript", 20000, 1),
+    transcribedAt: pickTime(value.transcribedAt, "transcription time"),
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function transcriptFromRow(row) {
+  return { id: row.id, sourceId: row.source_id, accountId: row.account_id, sourceUrl: row.source_url, medium: row.medium, engine: row.engine, transcript: row.transcript, transcribedAt: row.transcribed_at, createdAt: row.created_at };
+}
+
+// A pick that claims a reel must match a stored transcript from that same account,
+// and its selection must actually appear in the creator's spoken words.
+async function checkTranscriptEvidence(db, pick) {
+  if (!pick.transcriptId) return;
+  const row = await db.prepare("SELECT * FROM reel_transcripts WHERE id=? AND owner=?").bind(pick.transcriptId, PICKS_OWNER).first();
+  if (!row) throw new PickError("That transcript is not in your private record.", 404);
+  if (row.source_id !== pick.sourceId || row.account_id !== (pick.accountId || "")) throw new PickError("That transcript belongs to a different account.");
+  if (!spokenIn(row.transcript, pick.selection)) throw new PickError("The selection does not appear in the creator's spoken words.");
 }
 
 function insertCheck(db, check) {
@@ -829,22 +929,34 @@ async function importPicks(db, body) {
 async function runPicksAction(body, db) {
   const action = pickChoice(body.action, PICK_ACTIONS, "a supported picks action");
   if (action === "read") {
-    const [picks, checks, revisions] = await Promise.all([
+    const [picks, checks, revisions, transcripts] = await Promise.all([
       db.prepare("SELECT * FROM picks WHERE owner=? ORDER BY created_at DESC, id DESC").bind(PICKS_OWNER).all(),
       db.prepare("SELECT * FROM source_checks WHERE owner=? ORDER BY checked_at DESC, id DESC LIMIT 60").bind(PICKS_OWNER).all(),
       db.prepare("SELECT * FROM pick_revisions WHERE owner=? ORDER BY changed_at DESC, id DESC LIMIT 300").bind(PICKS_OWNER).all(),
+      db.prepare("SELECT * FROM reel_transcripts WHERE owner=? ORDER BY created_at DESC, id DESC LIMIT 100").bind(PICKS_OWNER).all(),
     ]);
-    [picks, checks, revisions].forEach(checkedResult);
+    [picks, checks, revisions, transcripts].forEach(checkedResult);
     return picksReply({
+      roster: PICK_ROSTER,
       picks: picks.results.map(pickFromRow),
       checks: checks.results.map(row => ({ id: row.id, sourceId: row.source_id, status: row.status, note: row.note, checkedAt: row.checked_at })),
       revisions: revisions.results.map(row => ({ id: row.id, pickId: row.pick_id, reason: row.reason, snapshot: row.snapshot, changedAt: row.changed_at })),
+      transcripts: transcripts.results.map(transcriptFromRow),
     });
   }
   if (action === "import") return importPicks(db, body);
   const now = new Date().toISOString();
+  if (action === "transcript") {
+    const transcript = validateTranscript(body.transcript);
+    const existing = await db.prepare("SELECT * FROM reel_transcripts WHERE owner=? AND source_url=?").bind(PICKS_OWNER, transcript.sourceUrl).first();
+    if (existing) return picksReply({ transcript: transcriptFromRow(existing), reused: true });
+    checkedResult(await db.prepare("INSERT INTO reel_transcripts(id,owner,source_id,account_id,source_url,medium,engine,transcript,transcribed_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)")
+      .bind(transcript.id, PICKS_OWNER, transcript.sourceId, transcript.accountId, transcript.sourceUrl, transcript.medium, transcript.engine, transcript.transcript, transcript.transcribedAt, transcript.createdAt).run());
+    return picksReply({ transcript }, 201);
+  }
   if (action === "save") {
-    const value = validatePickInput(body.pick), fingerprint = await pickFingerprint(value);
+    const value = validatePickInput(body.pick, true), fingerprint = await pickFingerprint(value);
+    await checkTranscriptEvidence(db, value);
     const duplicate = await db.prepare("SELECT id FROM picks WHERE owner=? AND (fingerprint=? OR original_fingerprint=?)").bind(PICKS_OWNER, fingerprint, fingerprint).first();
     if (duplicate) return picksReply({ error: "This pick is already in your desk.", duplicateId: duplicate.id }, 409);
     const pick = { ...value, id: crypto.randomUUID(), status: pickComplete(value) ? "pending" : "review", resultEvidence: "", resultUrl: "", createdAt: now, updatedAt: now, archived: false, revision: 1 };
@@ -871,6 +983,7 @@ async function runPicksAction(body, db) {
     const value = validatePickInput(body.pick);
     reason = pickText(body.reason, "correction reason", 2000, 3);
     if (!originalPickMatches(value, previous)) throw new PickError("Original evidence stays unchanged. Archive this entry and capture a new source if needed.");
+    await checkTranscriptEvidence(db, value);
     next = { ...next, ...value, status: pickComplete(value) ? "pending" : "review", resultEvidence: "", resultUrl: "" };
     fingerprint = await pickFingerprint(value);
     const duplicate = await db.prepare("SELECT id FROM picks WHERE owner=? AND (fingerprint=? OR original_fingerprint=?) AND id<>?").bind(PICKS_OWNER, fingerprint, fingerprint, id).first();
@@ -904,6 +1017,8 @@ export async function handlePicksRequest(request, env) {
     try { body = JSON.parse(raw); } catch { return picksReply({ error: "Invalid request." }, 400); }
     pickObject(body, "request");
     if (typeof body.pass !== "string" || !env.DASH_PASSPHRASE || body.pass !== env.DASH_PASSPHRASE) return picksReply({ error: "Unlock Sports Picks with your dashboard passphrase." }, 401);
+    if (typeof env.PICKS_ROSTER !== "string" || !env.PICKS_ROSTER.trim()) return picksReply({ error: "The creator roster secret is not configured for this Worker." }, 503);
+    loadRoster(env.PICKS_ROSTER);
     const origin = request.headers.get("origin");
     if (origin && origin !== PICKS_ORIGIN) return picksReply({ error: "Open Sports Picks from your dashboard." }, 403);
     if (body.action !== "import" && raw.length > 25000) return picksReply({ error: "Keep each request under 25,000 characters." }, 413);

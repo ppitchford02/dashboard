@@ -24,6 +24,10 @@ HERE = Path(__file__).resolve().parent
 DATA = HERE / "data.json"
 TEMPLATE = HERE / "template.html"
 OUT = HERE / "index.html"
+# A local preview is written here instead. GitHub Pages publishes the workflow's own
+# artifact, never a file committed from a laptop, so a preview must not be mistakable
+# for the published page: preview/ is git-ignored and nothing reads it but a browser.
+PREVIEW = HERE / "preview" / "index.html"
 
 WEATHER_TIMEOUT = 6  # seconds; falls back to data.json on failure
 
@@ -274,6 +278,7 @@ def subline(deadlines, now):
 
 def main():
     check = "--check" in sys.argv
+    preview = "--preview" in sys.argv
     cfg = json.loads(DATA.read_text())
     tpl = TEMPLATE.read_text()
 
@@ -323,6 +328,12 @@ def main():
                           end=parse_dt(d['end']).replace(tzinfo=tz).isoformat() if d.get('end') else None)
                       for d in sorted(deadlines, key=lambda d:d['due'])]
     dashboard = {key: cfg.get(key, []) for key in ('courses', 'agents', 'attention', 'pending')}
+    # The page used to report only its own build time, which refreshes every fifteen minutes
+    # whether or not the deadlines behind it are current: from 10 to 14 Sept the capture was
+    # dead and the page still looked fresh. These two are already in data.json; they were
+    # simply never passed to the page. Collection itself is unchanged.
+    dashboard.update(deadlines_captured_at=(cfg.get('law_school_status') or {}).get('last_successful_capture', ''),
+                     last_runs=cfg.get('last_runs', []))
     dashboard.update(name=cfg['name'], timezone=cfg.get('timezone', 'America/New_York'),
                      deadlines=live_deadlines, inbox_note=cfg.get('inbox_note', ''),
                      built_at=now.replace(tzinfo=tz).isoformat(),
@@ -337,7 +348,7 @@ def main():
         "{{PLANNER_JS}}": (HERE / "daily-planner.js").read_text(),
         "{{PICKS_JS}}": (HERE / 'picks.js').read_text(),
         "{{PARLAY_JS}}": (HERE / 'parlay-builder.js').read_text(),
-        "{{NEWS}}": news_block(now, write=not check),
+        "{{NEWS}}": news_block(now, write=not (check or preview)),
         "{{TZ_JSON}}": js(cfg.get('timezone', 'America/New_York')),
         "{{ASK_ENDPOINT_JSON}}": js(cfg.get('ask_endpoint', '')),
         "{{DEADLINES_JSON}}": js(live_deadlines),
@@ -375,6 +386,13 @@ def main():
 
     if check:
         print(f"  ok, {len(out)} bytes (not written)")
+        return
+
+    if preview:
+        PREVIEW.parent.mkdir(parents=True, exist_ok=True)
+        PREVIEW.write_text(out)
+        print(f"  wrote LOCAL PREVIEW {PREVIEW} ({len(out)} bytes)")
+        print("  this file is never published; GitHub Pages serves the workflow's build")
         return
 
     OUT.write_text(out)

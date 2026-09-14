@@ -69,3 +69,27 @@ CREATE TABLE IF NOT EXISTS pick_revisions (
   changed_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_revisions_owner_pick ON pick_revisions(owner,pick_id);
+
+-- Private reel evidence. Audio transcripts only: captions and viewer comments are
+-- never a source for a pick. Never published, never copied into the repository.
+CREATE TABLE IF NOT EXISTS reel_transcripts (
+  id TEXT PRIMARY KEY NOT NULL,
+  owner TEXT NOT NULL,
+  source_id TEXT NOT NULL CHECK (source_id IN ('sbd','bat','stunad','danny','nick','cru')),
+  account_id TEXT NOT NULL CHECK (length(account_id) > 0),
+  source_url TEXT NOT NULL CHECK (source_url LIKE 'https://%'),
+  medium TEXT NOT NULL CHECK (medium IN ('audio')),
+  engine TEXT NOT NULL,
+  transcript TEXT NOT NULL CHECK (length(transcript) > 0),
+  transcribed_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reels_owner_time ON reel_transcripts(owner,created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reels_owner_url ON reel_transcripts(owner,source_url);
+
+-- A stored transcript is evidence; it is never rewritten after capture.
+CREATE TRIGGER IF NOT EXISTS reel_transcripts_immutable
+BEFORE UPDATE ON reel_transcripts
+BEGIN
+  SELECT RAISE(ABORT,'reel transcripts are immutable');
+END;

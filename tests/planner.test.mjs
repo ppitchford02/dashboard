@@ -61,6 +61,41 @@ test('a locked empty device waits for the shared plan before prompting after 9 A
  assert.equal(ui.get('planner-count').textContent,'0/1 done');
 });
 
+test('a first sync seeds the server instead of wiping an unsynced local list',async()=>{
+ // 11 Sept 2026: the phone held twelve real items, the server had no row for the day and
+ // answered revision 0 with none, and the empty read was adopted over the real list.
+ const store=new Map([['pitchford-daily-planner:2026-09-11',JSON.stringify({prompted:true,revision:0,tasks:[
+   {title:'Citators problem set',done:false,priority:true},
+   {title:'Call the clerk',done:true,priority:false}]})]]);
+ const ui=harness(store);
+ const calls=[];
+ let server={day:'2026-09-11',prompted:false,revision:0,tasks:[]};
+ ui.window.PitchfordPlanner.init({hasPass:()=>true,request:async p=>{
+   calls.push(p);
+   if(p.action==='save'){server={day:p.day,prompted:true,revision:1,tasks:p.tasks.map(t=>({...t}))};}
+   return server;}});
+ await settle(); await settle();
+ assert.deepEqual(plain(calls).map(c=>c.action),['read','save'],'the empty read is followed by a seeding save');
+ assert.equal(plain(calls)[1].revision,0,'the seed is written against the revision the server reported');
+ assert.deepEqual(plain(calls)[1].tasks.map(t=>t.title),['Citators problem set','Call the clerk']);
+ assert.equal(ui.get('planner-list').children.length,2,'both local tasks survive the first sync');
+ assert.equal(ui.get('planner-count').textContent,'1/2 done','done state survives too');
+ assert.deepEqual(JSON.parse(ui.store.get('pitchford-daily-planner:2026-09-11')).tasks.map(t=>t.title),
+   ['Citators problem set','Call the clerk'],'and the device copy is not emptied');
+});
+
+test('a failed seed still leaves the unsynced local list on the device',async()=>{
+ const store=new Map([['pitchford-daily-planner:2026-09-11',JSON.stringify({prompted:true,revision:0,tasks:[
+   {title:'Citators problem set',done:false,priority:true}]})]]);
+ const ui=harness(store);
+ ui.window.PitchfordPlanner.init({hasPass:()=>true,request:async p=>{
+   if(p.action==='save')throw new Error('Worker unavailable');
+   return {day:'2026-09-11',prompted:false,revision:0,tasks:[]};}});
+ await settle(); await settle();
+ assert.equal(ui.get('planner-list').children.length,1,'the list is kept when the seed fails');
+ assert.deepEqual(JSON.parse(ui.store.get('pitchford-daily-planner:2026-09-11')).tasks.map(t=>t.title),['Citators problem set']);
+});
+
 test('a second device shows the list planned on the first',async()=>{
  const server={day:'2026-09-11',prompted:true,revision:4,tasks:[{title:'Read chapter',done:true,priority:true},{title:'Take a walk',done:false,priority:false}]};
  const ui=harness();

@@ -7,11 +7,12 @@ const script = readFileSync(new URL('../parlay-builder.js', import.meta.url), 'u
 const context = vm.createContext({ window: {}, Intl, Date });
 vm.runInContext(script, context);
 const builder = context.window.PitchfordParlay;
+builder.setRoster([{id: 'danny'}, {id: 'stunad'}, {id: 'nick'}, {id: 'cru'}, {id: 'sbd'}, {id: 'bat'}].map(creator => ({...creator, name: creator.id, accounts: []})));
 
 test('builder only forwards confirmed, dated anytime touchdown records from saved sources', () => {
   const base = { sourceId: 'cru', sport: 'NFL', eventDate: '2026-09-13', status: 'pending', archived: false,
     capturedBeforeStart: true, selection: 'Jahmyr Gibbs 1+ TD', market: 'Player prop',
-    event: 'Saints at Lions', sourceUrl: 'https://discord.com/channels/example', originalText: 'Anytime touchdown: Jahmyr Gibbs' };
+    event: 'Saints at Lions', sourceUrl: 'https://example.com/channels/example', originalText: 'Anytime touchdown: Jahmyr Gibbs' };
   const picks = [base,
     { ...base, sourceId: 'danny', selection: 'Jalen Hurts touchdown' },
     { ...base, sourceId: 'nick', selection: 'Lamar Jackson passing touchdowns' },

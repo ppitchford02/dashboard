@@ -1,0 +1,93 @@
+[
+  {
+    "id": "danny",
+    "name": "Example Creator One",
+    "accounts": [
+      {
+        "id": "danny-account-1",
+        "platform": "Example Platform A",
+        "url": "https://example.com/danny/account-1"
+      },
+      {
+        "id": "danny-account-2",
+        "platform": "Example Platform B",
+        "url": "https://example.com/danny/account-2"
+      },
+      {
+        "id": "danny-account-3",
+        "platform": "Example Platform C",
+        "url": "https://example.com/danny/account-3"
+      }
+    ]
+  },
+  {
+    "id": "stunad",
+    "name": "Example Creator Two",
+    "accounts": [
+      {
+        "id": "stunad-account-1",
+        "platform": "Example Platform A",
+        "url": "https://example.com/stunad/account-1"
+      }
+    ]
+  },
+  {
+    "id": "nick",
+    "name": "Example Creator Three",
+    "accounts": [
+      {
+        "id": "nick-account-1",
+        "platform": "Example Platform A",
+        "url": "https://example.com/nick/account-1"
+      },
+      {
+        "id": "nick-account-2",
+        "platform": "Example Platform B",
+        "url": "https://example.com/nick/account-2"
+      }
+    ]
+  },
+  {
+    "id": "cru",
+    "name": "Example Creator Four",
+    "accounts": [
+      {
+        "id": "cru-account-1",
+        "platform": "Example Platform A",
+        "url": "https://example.com/cru/account-1"
+      },
+      {
+        "id": "cru-account-2",
+        "platform": "Example Platform B",
+        "url": "https://example.com/cru/account-2"
+      }
+    ]
+  },
+  {
+    "id": "sbd",
+    "name": "Example Creator Five",
+    "accounts": [
+      {
+        "id": "sbd-account-1",
+        "platform": "Example Platform A",
+        "url": "https://example.com/sbd/account-1"
+      },
+      {
+        "id": "sbd-account-2",
+        "platform": "Example Platform B",
+        "url": "https://example.com/sbd/account-2"
+      }
+    ]
+  },
+  {
+    "id": "bat",
+    "name": "Example Creator Six",
+    "accounts": [
+      {
+        "id": "bat-account-1",
+        "platform": "Example Platform A",
+        "url": "https://example.com/bat/account-1"
+      }
+    ]
+  }
+]

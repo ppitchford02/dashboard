@@ -1,11 +1,16 @@
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 import build
+import pathlib
 import news
+
+HERE = Path(__file__).resolve().parent.parent
 
 RSS = b'''<rss><channel><item><title>A &amp; B</title><link>https://example.com/a</link><pubDate>Thu, 10 Sep 2026 10:00:00 GMT</pubDate></item><item><title>Unsafe</title><link>javascript:alert(1)</link><pubDate>Thu, 10 Sep 2026 11:00:00 GMT</pubDate></item></channel></rss>'''
 
@@ -66,4 +71,95 @@ class DashboardTests(unittest.TestCase):
             self.assertNotIn('Course load',rendered)
             self.assertNotIn('Last run',rendered)
 
+
+class PreviewIsSeparateFromThePublishedArtifact(unittest.TestCase):
+    """GitHub Pages serves the workflow's own build. A laptop preview must never be
+    mistakable for it, and must not touch the artifacts the workflow owns."""
+    def test_preview_writes_only_to_preview_and_leaves_index_and_news_alone(self):
+        import tempfile, pathlib
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d)
+            data = root/'data.json'; data.write_text(build.DATA.read_text())
+            out = root/'index.html'; out.write_text('SENTINEL')
+            prev = root/'preview'/'index.html'
+            with patch.object(build,'DATA',data), patch.object(build,'OUT',out), \
+                 patch.object(build,'PREVIEW',prev), \
+                 patch.object(build,'weather_blocks',return_value=('Weather unavailable','','')), \
+                 patch.object(build,'news_block',return_value='NEWS_CONTENT') as news, \
+                 patch('sys.argv',['build.py','--preview']):
+                build.main()
+            self.assertTrue(prev.exists(), 'the preview is written')
+            self.assertEqual(out.read_text(), 'SENTINEL', 'the published artifact is untouched')
+            self.assertFalse(news.call_args.kwargs['write'], 'a preview never rewrites news.json')
+
+    def test_deploy_never_stages_the_workflow_owned_artifacts(self):
+        text = (pathlib.Path(build.HERE)/'deploy.sh').read_text()
+        self.assertIn("':(exclude)index.html'", text)
+        self.assertIn("':(exclude)news.json'", text)
+        self.assertNotIn('git add index.html', text)
+        self.assertIn('git rev-parse HEAD', text)   # the verify step pins the published commit
+
 if __name__=='__main__': unittest.main()
+
+class PrivateRosterTests(unittest.TestCase):
+    """The roster is a deployment secret. These tests read no secret file: they check
+    that nothing shaped like a creator account reaches the repository or the page."""
+
+    HOSTS = ["instagram.com", "tiktok.com", "discord.com/channels", "x.com/", "twitter.com/"]
+
+    # This file necessarily names the hosts it forbids, so it is the one exclusion.
+    SELF = "tests/test_dashboard.py"
+
+    def tracked_files(self):
+        listed = subprocess.run(["git", "ls-files"], cwd=HERE, capture_output=True, text=True)
+        self.assertEqual(listed.returncode, 0, listed.stderr)
+        return [name for name in listed.stdout.split() if (HERE / name).is_file()]
+
+    def build_preview(self):
+        built = subprocess.run([sys.executable, str(HERE / "build.py"), "--preview"], cwd=HERE, capture_output=True, text=True)
+        self.assertEqual(built.returncode, 0, built.stderr)
+        return (HERE / "preview" / "index.html").read_text(encoding="utf-8")
+
+    def test_no_source_host_reaches_the_built_page(self):
+        page = self.build_preview()
+        for host in self.HOSTS:
+            self.assertNotIn(host, page, f"{host} is inlined in the built page")
+        # The tab and its lists stay public; only the roster is private.
+        self.assertIn('id="view-picks"', page)
+        self.assertIn('id="picks-clean-list"', page)
+        self.assertIn('id="picks-leans-list"', page)
+
+    def test_no_tracked_file_carries_a_creator_account(self):
+        leaked = []
+        for name in self.tracked_files():
+            if name == self.SELF:
+                continue
+            try:
+                text = (HERE / name).read_text(encoding="utf-8")
+            except (UnicodeDecodeError, OSError):
+                continue
+            for host in self.HOSTS:
+                if host in text:
+                    leaked.append(f"{name}: {host}")
+        self.assertEqual(leaked, [], "creator account links are committed to this repository")
+
+    def test_the_worker_carries_no_roster_of_its_own(self):
+        worker = (HERE / "worker.js").read_text(encoding="utf-8")
+        self.assertIn("env.PICKS_ROSTER", worker)
+        self.assertNotIn("PICK_ROSTER = [{", worker.replace(" ", ""))
+        for host in self.HOSTS:
+            self.assertNotIn(host, worker)
+
+    def test_the_secret_file_is_ignored_and_never_tracked(self):
+        # Checked by path, so this passes whether or not the local file is present.
+        ignored = subprocess.run(["git", "check-ignore", "picks-roster.json"], cwd=HERE, capture_output=True, text=True)
+        self.assertEqual(ignored.returncode, 0, "picks-roster.json must be gitignored")
+        self.assertNotIn("picks-roster.json", self.tracked_files())
+
+    def test_the_roster_fixture_is_synthetic(self):
+        roster = json.loads((HERE / "tests" / "fixtures" / "roster.json").read_text(encoding="utf-8"))
+        self.assertTrue(roster)
+        for creator in roster:
+            self.assertTrue(creator["accounts"])
+            for account in creator["accounts"]:
+                self.assertTrue(account["url"].startswith("https://example.com/"), account["url"])

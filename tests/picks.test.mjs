@@ -5,14 +5,20 @@ import {DatabaseSync} from 'node:sqlite';
 
 const code = await readFile(new URL('../worker.js', import.meta.url), 'utf8');
 const schema = await readFile(new URL('../schema-picks.sql', import.meta.url), 'utf8');
-const {default: worker, validatePickInput, validateSettlementInput, pickIdentityText} =
+// The roster is a deployment secret. The tests never read it: they run against a
+// fully synthetic fixture, so nothing here depends on a local secret file and no real
+// creator name, account id, or account link exists anywhere in this repository.
+const ROSTER = await readFile(new URL('./fixtures/roster.json', import.meta.url), 'utf8');
+const {default: worker, validatePickInput, validateSettlementInput, pickIdentityText, loadRoster} =
   await import('data:text/javascript;base64,' + Buffer.from(code).toString('base64'));
+const ROSTER_LIST = JSON.parse(ROSTER);
+const account = (creator, index) => ROSTER_LIST.find(entry => entry.id === creator).accounts[index].id;
 const ORIGIN = 'https://ppitchford02.github.io';
 const PASS = 'only-used-in-tests';
 const source = {
-  sourceId: 'nick', sport: 'MLB', market: 'Home run', selection: 'Test Player',
+  sourceId: 'nick', accountId: account('nick', 0), sport: 'MLB', market: 'Home run', selection: 'Test Player',
   event: 'Test Away at Test Home', eventDate: '2026-09-11', odds: 350,
-  postedAt: '2026-09-11T09:30', sourceUrl: 'https://discord.com/channels/1/2/3',
+  postedAt: '2026-09-11T09:30', sourceUrl: 'https://example.com/channels/1/2/3',
   originalText: 'Original test post: Test Player to hit a home run.', capturedBeforeStart: false,
 };
 
@@ -57,7 +63,7 @@ async function api(db, body, options = {}) {
     headers: {'content-type': 'application/json', origin: ORIGIN, ...options.headers},
     ...(options.method && options.method !== 'POST' ? {} : {body: JSON.stringify({pass: PASS, ...body})}),
   });
-  const response = await worker.fetch(request, {DASH_PASSPHRASE: PASS, PICKS_DB: db, ...options.env});
+  const response = await worker.fetch(request, {DASH_PASSPHRASE: PASS, PICKS_ROSTER: ROSTER, PICKS_DB: db, ...options.env});
   const data = response.status === 204 ? null : await response.json();
   return {status: response.status, data, headers: response.headers};
 }
@@ -67,6 +73,8 @@ async function save(db, changes = {}) {
   assert.equal(result.status, 201, JSON.stringify(result.data));
   return result.data.pick;
 }
+
+loadRoster(ROSTER);
 
 test('pick validation rejects invalid odds, dates, links and unknown sources', () => {
   assert.equal(validatePickInput(source).odds, 350);
@@ -149,7 +157,7 @@ test('settlement requires evidence; correction preserves originals and resets th
   const settled = await api(db, {action: 'settle', id: captured.id, revision: 1, status: 'win', resultEvidence: 'Verified test box score', resultUrl: 'https://example.com/result'});
   assert.equal(settled.status, 200);
   assert.equal(settled.data.pick.revision, 2);
-  for (const change of [{originalText: 'Changed original'}, {sourceId: 'cru'}, {sourceUrl: 'https://example.com/different'}]) {
+  for (const change of [{originalText: 'Changed original'}, {sourceId: 'cru', accountId: account('cru', 0)}, {accountId: account('nick', 1)}, {sourceUrl: 'https://example.com/different'}]) {
     const result = await api(db, {action: 'edit', id: captured.id, revision: 2, reason: 'Attempted correction', pick: {...source, ...change}});
     assert.equal(result.status, 400);
     assert.match(result.data.error, /Original evidence stays unchanged/);
@@ -261,4 +269,181 @@ test('invalid or conflicting imports cannot leave partial data behind', async ()
   assert.equal(noOriginal.status, 400);
   assert.match(noOriginal.data.error, /first revision snapshot/);
   assert.deepEqual((await api(target, {action: 'read'})).data.picks, []);
+});
+
+test('a creator account is recorded only when it belongs to that creator', async () => {
+  assert.equal(validatePickInput({...source, accountId: account('nick', 1)}).accountId, account('nick', 1));
+  assert.equal('accountId' in validatePickInput({...source, accountId: ''}), false);
+  for (const changes of [
+    {accountId: account('danny', 1)},          // belongs to another creator
+    {accountId: 'not-a-configured-account'},        // not a configured account
+    {accountId: 'invented-handle'},
+    {accountId: 7},
+  ]) assert.throws(() => validatePickInput({...source, ...changes}), /belongs to this creator/, JSON.stringify(changes));
+  for (const accountId of [account('danny', 0), account('danny', 1), account('danny', 2)]) {
+    assert.equal(validatePickInput({...source, sourceId: 'danny', accountId}).accountId, accountId);
+  }
+});
+
+test('the account is part of the original evidence and cannot be edited later', async () => {
+  const db = database();
+  const saved = await save(db, {sourceId: 'danny', accountId: account('danny', 2)});
+  assert.equal(saved.accountId, account('danny', 2));
+  assert.equal(saved.sourceId, 'danny');
+  const moved = await api(db, {
+    action: 'edit', id: saved.id, revision: saved.revision, reason: 'Wrong account recorded',
+    pick: {...source, sourceId: 'danny', accountId: account('danny', 1)},
+  });
+  assert.equal(moved.status, 400);
+  assert.match(moved.data.error, /Original evidence stays unchanged/);
+  const kept = await api(db, {action: 'read'});
+  assert.equal(kept.data.picks[0].accountId, account('danny', 2));
+});
+
+test('one creator posting the same pick from two accounts is stored once', async () => {
+  const db = database();
+  await save(db, {sourceId: 'danny', accountId: account('danny', 0)});
+  const again = await api(db, {action: 'save', pick: {...source, sourceId: 'danny', accountId: account('danny', 1)}});
+  assert.equal(again.status, 409);
+  assert.match(again.data.error, /already in your desk/);
+  const stored = await api(db, {action: 'read'});
+  assert.equal(stored.data.picks.length, 1);
+});
+
+test('a new capture from a creator with several accounts must name the account', async () => {
+  const db = database();
+  const {accountId, ...withoutAccount} = source;
+  const missing = await api(db, {action: 'save', pick: withoutAccount});
+  assert.equal(missing.status, 400);
+  assert.match(missing.data.error, /which of this creator's accounts/);
+  assert.equal((await api(db, {action: 'read'})).data.picks.length, 0);
+  // A creator with a single account, and every import or correction, is unaffected.
+  const single = await api(db, {action: 'save', pick: {...withoutAccount, sourceId: 'stunad', sourceUrl: 'https://example.com/private-post/1'}});
+  assert.equal(single.status, 201);
+  assert.equal(single.data.pick.accountId, undefined);
+  assert.equal(validatePickInput(withoutAccount).accountId, undefined);
+});
+
+// Fixture reel evidence. Invented wording for tests only; no reel was opened.
+const reel = {
+  sourceId: 'danny', accountId: account('danny', 1),
+  sourceUrl: 'https://example.com/private-reel/1',
+  medium: 'audio', engine: 'test-fixture',
+  transcript: 'Give me Texans moneyline tonight. I would have to lean Bengals over 42.5.',
+  transcribedAt: '2026-09-14T15:00:00Z',
+};
+
+test('reel transcripts are stored as private audio evidence and never from captions or comments', async () => {
+  const db = database();
+  const saved = await api(db, {action: 'transcript', transcript: reel});
+  assert.equal(saved.status, 201);
+  assert.equal(saved.data.transcript.transcript, reel.transcript);
+  assert.equal(saved.data.transcript.medium, 'audio');
+  const again = await api(db, {action: 'transcript', transcript: {...reel, transcript: 'A different pass over the same reel.'}});
+  assert.equal(again.data.reused, true);
+  assert.equal(again.data.transcript.transcript, reel.transcript, 'stored evidence is never rewritten');
+  for (const [changes, pattern] of [
+    [{medium: 'caption'}, /captions and viewer comments are not a source/],
+    [{medium: 'comment'}, /captions and viewer comments are not a source/],
+    [{accountId: ''}, /which of this creator's accounts/],
+    [{accountId: account('nick', 1)}, /belongs to this creator/],
+    [{sourceUrl: ''}, /link to the reel/],
+    [{sourceUrl: 'http://example.com/reel'}, /https/],
+    [{transcript: '   '}, /transcript/],
+    [{transcribedAt: 'yesterday'}, /transcription time/],
+  ]) {
+    const result = await api(db, {action: 'transcript', transcript: {...reel, sourceUrl: reel.sourceUrl + Math.random(), ...changes}});
+    assert.equal(result.status, 400, JSON.stringify(changes));
+    assert.match(result.data.error, pattern, JSON.stringify(changes));
+  }
+  assert.equal((await api(db, {action: 'read'})).data.transcripts.length, 1);
+});
+
+test('a pick may only claim a reel it was actually spoken in', async () => {
+  const db = database();
+  const transcriptId = (await api(db, {action: 'transcript', transcript: reel})).data.transcript.id;
+  const base = {...source, sourceId: 'danny', accountId: account('danny', 1), sport: 'NFL', market: 'Moneyline',
+    selection: 'Texans moneyline', event: 'Texans at Colts', originalText: reel.transcript,
+    sourceUrl: 'https://example.com/private-reel/1/post'};
+  const wrongWords = await api(db, {action: 'save', pick: {...base, selection: 'Chiefs moneyline', transcriptId}});
+  assert.equal(wrongWords.status, 400);
+  assert.match(wrongWords.data.error, /does not appear in the creator's spoken words/);
+  const wrongAccount = await api(db, {action: 'save', pick: {...base, accountId: account('danny', 2), transcriptId}});
+  assert.equal(wrongAccount.status, 400);
+  assert.match(wrongAccount.data.error, /belongs to a different account/);
+  const unknown = await api(db, {action: 'save', pick: {...base, transcriptId: 'not-a-stored-transcript'}});
+  assert.equal(unknown.status, 404);
+  const good = await api(db, {action: 'save', pick: {...base, transcriptId}});
+  assert.equal(good.status, 201, JSON.stringify(good.data));
+  assert.equal(good.data.pick.transcriptId, transcriptId);
+  assert.equal(good.data.pick.kind, undefined, 'a firm pick stores no extra key');
+});
+
+test('a lean is stored as a lean and historical picks keep no kind at all', async () => {
+  const db = database();
+  const transcriptId = (await api(db, {action: 'transcript', transcript: reel})).data.transcript.id;
+  const lean = await api(db, {action: 'save', pick: {...source, sourceId: 'danny', accountId: account('danny', 1),
+    sport: 'NFL', market: 'Total', selection: 'Bengals over 42.5', event: 'Bengals at Buccaneers',
+    originalText: reel.transcript, sourceUrl: 'https://example.com/private-reel/1/lean',
+    kind: 'lean', transcriptId}});
+  assert.equal(lean.status, 201, JSON.stringify(lean.data));
+  assert.equal(lean.data.pick.kind, 'lean');
+  assert.throws(() => validatePickInput({...source, kind: 'probably'}), /firm or lean/);
+  const historical = await save(db);
+  assert.equal(historical.kind, undefined);
+  assert.equal(historical.transcriptId, undefined);
+  const reread = (await api(db, {action: 'read'})).data.picks.find(row => row.id === historical.id);
+  assert.equal('kind' in reread, false, 'a historical pick is not rewritten with a kind');
+  assert.equal('transcriptId' in reread, false);
+});
+
+test('without the roster secret the picks path refuses every action', async () => {
+  const db = database();
+  for (const PICKS_ROSTER of [undefined, '', '   ']) {
+    const result = await api(db, {action: 'read'}, {env: {PICKS_ROSTER}});
+    assert.equal(result.status, 503);
+    assert.match(result.data.error, /roster secret is not configured/);
+  }
+  for (const [secret, pattern] of [
+    ['not json', /not valid JSON/],
+    ['[]', /holds no creators/],
+    ['[{"id":"Bad Id","name":"x","accounts":[{"id":"a","platform":"X","url":"https://example.com"}]}]', /creator id is invalid/],
+    ['[{"id":"a","name":"","accounts":[{"id":"a1","platform":"X","url":"https://example.com"}]}]', /has no name/],
+    ['[{"id":"a","name":"A","accounts":[]}]', /has no accounts/],
+    ['[{"id":"a","name":"A","accounts":[{"id":"a1","platform":"X","url":"http://example.com"}]}]', /no https link/],
+    ['[{"id":"a","name":"A","accounts":[{"id":"a1","platform":"X","url":"https://example.com"}]},{"id":"a","name":"B","accounts":[{"id":"b1","platform":"X","url":"https://example.com"}]}]', /creator id is repeated/],
+  ]) {
+    const result = await api(db, {action: 'read'}, {env: {PICKS_ROSTER: secret}});
+    assert.equal(result.status, 503, secret);
+    assert.match(result.data.error, pattern, secret);
+  }
+  // A bad secret never leaves a partial roster behind for the next request.
+  const good = await api(db, {action: 'read'});
+  assert.equal(good.status, 200);
+  assert.equal(good.data.roster.length, JSON.parse(ROSTER).length);
+});
+
+test('the tracked Worker source carries no roster values of its own', async () => {
+  const worker = await readFile(new URL('../worker.js', import.meta.url), 'utf8');
+  for (const creator of JSON.parse(ROSTER)) {
+    assert.equal(worker.includes(creator.name), false, `worker.js names ${creator.id}`);
+    for (const account of creator.accounts) {
+      assert.equal(worker.includes(account.url), false, 'worker.js holds an account link');
+      assert.equal(worker.includes(account.id), false, 'worker.js holds an account id');
+    }
+  }
+});
+
+test('the roster is served only to an authenticated read, exactly as configured', async () => {
+  const db = database();
+  const locked = await api(db, {action: 'read'}, {headers: {}, env: {DASH_PASSPHRASE: 'a-different-passphrase'}});
+  assert.equal(locked.status, 401);
+  assert.equal(locked.data.roster, undefined, 'a locked request must learn no creator');
+  assert.equal(JSON.stringify(locked.data).includes('example.com'), false);
+  const opened = await api(db, {action: 'read'});
+  assert.equal(opened.status, 200);
+  assert.deepEqual(opened.data.roster, ROSTER_LIST, 'the read mirrors the configured roster');
+  // Validation is driven by the configured roster, not by anything baked into the code.
+  assert.equal(validatePickInput({...source, sourceId: 'danny', accountId: account('danny', 2)}).accountId, account('danny', 2));
+  assert.throws(() => validatePickInput({...source, sourceId: 'not-in-this-roster'}), /a configured source/);
 });

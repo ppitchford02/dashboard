@@ -106,7 +106,18 @@
   async function sync(ask = false) {
     if (!api || pending) return;
     if (!ask && !api.hasPass()) { synced = false; render(); return; }
-    await send({action:'read'}, 'Could not load today’s list.');
+    // A list that has never reached the Worker must not be emptied by the first read.
+    // The server has no row for a day it has not seen, so it answers revision 0 with no
+    // tasks, and adopting that silently discarded a real list (11 Sept 2026). Seed the
+    // server from this device instead, then adopt whatever the write returns.
+    const local = (!synced && state.tasks.length) ? copy(state) : null;
+    const data = await send({action:'read'}, 'Could not load today’s list.');
+    if (local && data && data !== 'conflict' && data.revision === 0 && !data.tasks.length) {
+      state = local; save(); render();
+      if (await send({action:'save', tasks: local.tasks, revision: 0}, 'Could not sync today’s list.') === null) {
+        state = local; save(); render();   // the seed failed; this device keeps its own list
+      }
+    }
     if (synced) maybePrompt();
   }
 

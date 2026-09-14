@@ -55,6 +55,11 @@ Live dashboard: https://ppitchford02.github.io/dashboard/
 - `worker.js`: separately deployed Cloudflare assistant, private picks and planner endpoints.
 - `daily-planner.js`: Today's list, synced across devices through private D1.
 - `picks.js`: native Sports Picks tab, evidence, filters, and record tracking.
+  It holds no creator roster; the roster arrives from the Worker after unlock.
+- `picks-roster.json`: local, gitignored, never committed. Its contents are the
+  value of the `PICKS_ROSTER` Worker secret. Keep a copy somewhere safe.
+- `tests/fixtures/roster.json`: synthetic roster used by the tests. No real
+  creator name, account identifier, or account link appears in this repository.
 - `schema-picks.sql`: private D1 picks tables and integrity constraints.
 - `schema-planner.sql`: private D1 table behind Today's list.
 - `.github/workflows/rebuild.yml`: validation, refresh, and GitHub Pages publishing.
@@ -117,6 +122,8 @@ Cloudflare secrets:
 - `ANTHROPIC_API_KEY`
 - `DASH_PASSPHRASE`
 - `GITHUB_TOKEN`: fine-grained, this repo only, Contents read/write
+- `PICKS_ROSTER`: the private creator-account roster as JSON, set from the local
+  `picks-roster.json`. Required by `/picks`; see Sports Picks below.
 
 Variables:
 - `ALLOWED_ORIGIN`: `https://ppitchford02.github.io`
@@ -147,20 +154,87 @@ filters, archive/restore, and evidence-backed result entry. Its unit returns
 include only complete picks captured before the event with known valid odds;
 voids are excluded and pushes return zero. Records are tracking, not forecasts.
 
+### Creators and accounts
+
+A creator may post the same pick from several accounts. Each creator keeps one
+id, so stored rows, source records, and deduplication are unchanged, and the
+account a pick came from is recorded privately alongside it. An account is
+required on every new capture from a creator with more than one account;
+historical picks with no recorded account stay editable and unchanged.
+
+The roster, every account link, and the creator-to-account mapping live only in
+the `PICKS_ROSTER` Worker secret. They are served on an authenticated read and
+are never inlined into the published page, `data.json`, or any static output.
+The page holds no roster until the passphrase unlocks the desk, at which point
+the creator tabs, source records, and account dropdown are built from the read.
+Without the secret, or with a malformed one, `/picks` fails closed: every action
+returns 503 naming the problem rather than running with an unvalidated roster.
+Tests assert that no tracked file and no built page contains an account link.
+
+### Eligible picks and Leans
+
+**Eligible picks** lists confirmed selections only, one per line in plain form,
+with no captions, post times, platform details, source-check notes, or
+uncertainty reasons. A pick is shown only after it passes a check against the
+evidence stored with it: known creator and account, captured before the event,
+selection, event, date and original evidence present, an https source link, and
+wording that states a pick. Unclear wording gets one further pass; if it still
+does not hold, the pick is omitted and its reason is kept in the private record.
+This checks stored evidence. The live post is not reopened.
+
+**Leans** is a separate labelled list for qualified wording such as "lean",
+"would have to lean", or "maybe". Leans are visible but never counted as
+confirmed picks, never included in source records, and never used as Parlay
+Builder input.
+
+### Reel intake
+
+`reel_transcripts` holds reel evidence privately: the transcript, transcription
+time, creator, account, reel link, engine, and medium. Medium is constrained to
+audio at both the schema and the API, so a caption or a viewer comment can never
+be stored as a source, and a trigger makes a stored transcript immutable. A pick
+that claims a transcript must match one from the same account and its selection
+must appear in the creator's spoken words, or the save is refused.
+
+Extraction reads the creator's spoken sentences only and classifies each as a
+firm pick or a lean. Sentences relaying someone else are dropped with a reason.
+Intake stores the transcript and returns candidates; it never saves a pick by
+itself. Transcription is pluggable through an adapter interface. No local
+transcription runtime is installed, so that adapter reports itself unavailable
+and names the missing dependency rather than downloading anything.
+
 The **Record a source check** form in the Sports Picks sidebar saves a source,
 status and observation note through the same private API used by the agent.
 Failed saves retain the note for correction or retry. A locked new device waits
 to load the shared daily planner before showing a morning planning prompt.
 
-Deploy the database and Worker before publishing the tab:
+### Deployment order
 
-1. Create the private D1 database `pitchford-picks` and apply `schema-picks.sql`.
-2. Bind it as `PICKS_DB` on the existing `pitchford-os-ask` Worker.
-3. Deploy `worker.js`, retaining `LIMITS`, all secrets, and existing settings.
-4. Unlock the live dashboard and import the existing desk through the scoped
-   `dashboard_picks_import` browser tool. Preserve IDs, timestamps, and history.
-5. Verify the migrated records before pointing scheduled captures at the
-   dashboard's `dashboard_picks_capture` and `dashboard_picks_source_check` tools.
+Order matters. The read queries `reel_transcripts` in the same batch as picks,
+so a missing table breaks every read, not only transcript work; and the page
+build expects a Worker that returns the roster. Deploy in this order:
+
+1. **Schema first.** Apply `schema-picks.sql` to the private D1 database bound
+   as `PICKS_DB`. Every statement is `IF NOT EXISTS`, so re-running the whole
+   file is safe and changes no existing row. Additive, and ignored by the
+   currently deployed Worker, so it can be done ahead of everything else.
+2. **Secret second.** Add the encrypted variable `PICKS_ROSTER` to the
+   `pitchford-os-ask` Worker with the contents of `picks-roster.json`. A Worker
+   that does not yet read it ignores it, so setting it early is harmless;
+   deploying the new code first would leave `/picks` returning 503.
+3. **Worker third.** Deploy `worker.js`, retaining `LIMITS`, `PICKS_DB`, all
+   secrets, and existing settings. Check `/health`, then unlock the live
+   dashboard and confirm picks still load.
+4. **Pages push fourth.** Push the commit. The workflow runs the checks, builds
+   the page, and publishes it. Pushing before step 3 would leave the new page
+   asking an old Worker for a roster it does not return, so the creator list
+   would be empty and capture would refuse to open.
+
+First-time setup only: create the private D1 database `pitchford-picks`, bind it
+as `PICKS_DB`, then after step 4 import the existing desk through the scoped
+`dashboard_picks_import` browser tool, preserving IDs, timestamps, and history,
+and verify the migrated records before pointing scheduled captures at
+`dashboard_picks_capture` and `dashboard_picks_source_check`.
 
 `POST /picks` requires `DASH_PASSPHRASE`, uses the dashboard origin for CORS, and
 sends `Cache-Control: no-store`. It does not invoke the assistant or write

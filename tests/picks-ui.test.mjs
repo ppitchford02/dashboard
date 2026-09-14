@@ -4,6 +4,11 @@ import { test } from 'node:test';
 import vm from 'node:vm';
 
 const script = readFileSync(new URL('../picks.js', import.meta.url), 'utf8');
+// The roster is a deployment secret. These tests run against a fully synthetic fixture,
+// so they never read it and never depend on a local secret file.
+const PICK_ROSTER = JSON.parse(readFileSync(new URL('./fixtures/roster.json', import.meta.url), 'utf8'));
+const ROSTER_LIST = PICK_ROSTER;
+const account = (creator, index) => ROSTER_LIST.find(entry => entry.id === creator).accounts[index].id;
 const template = readFileSync(new URL('../template.html', import.meta.url), 'utf8');
 
 // Only the DOM operations used by the Picks UI are needed. IDs and form fields
@@ -101,7 +106,7 @@ function harness(api) {
     assert.ok(tools.has(name), `Tool ${name} was not registered`);
     return tools.get(name);
   };
-  return { get, fields, tool };
+  return { get, fields, tool, context };
 }
 
 function pick(overrides = {}) {
@@ -116,7 +121,7 @@ function pick(overrides = {}) {
   };
 }
 
-const desk = (picks = []) => ({ picks, checks: [], revisions: [] });
+const desk = (picks = []) => ({ roster: PICK_ROSTER, picks, checks: [], revisions: [] });
 
 test('source checks can be saved from the dashboard and failed notes remain editable', async () => {
   const sent = [];
@@ -157,17 +162,18 @@ test('renders exactly six source tabs and collapses matching picks into one cred
   const tabs = ui.get('picks-source-tabs').children;
   assert.equal(tabs.length, 6);
   assert.deepEqual(tabs.map(tab => tab.dataset.source), ['danny', 'stunad', 'nick', 'cru', 'sbd', 'bat']);
-  assert.match(tabs[4].textContent, /SportsDime \(1\)/);
-  assert.match(tabs[5].textContent, /MLB Bat Guy \(0\)/);
+  assert.equal(tabs[4].textContent, `${ROSTER_LIST[4].name} (1)`);
+  assert.equal(tabs[5].textContent, `${ROSTER_LIST[5].name} (0)`);
   assert.equal(ui.get('picks-list').children.length, 1);
   assert.match(ui.get('picks-list').textContent, /Randy Arozarena/);
-  assert.match(ui.get('picks-list').textContent, /SportsDime evidence/);
-  assert.match(ui.get('picks-list').textContent, /MLB Bat Guy evidence/);
+  assert.equal(ui.get('picks-list').textContent.includes(`${ROSTER_LIST[4].name} evidence`), true);
+  assert.equal(ui.get('picks-list').textContent.includes(`${ROSTER_LIST[5].name} evidence`), true);
 });
 
 test('capture rejects malformed odds before any API request and preserves the form', async () => {
   let calls = 0;
-  const ui = harness(async () => { calls++; throw new Error('Invalid odds must never reach the API'); });
+  const ui = harness(async body => { if (body.action === 'read') return desk(); calls++; throw new Error('Invalid odds must never reach the API'); });
+  await ui.get('picks-unlock').fire('click');
   await ui.get('picks-add').fire('click');
   ui.fields.get('originalText').value = 'Keep this original evidence.';
   for (const value of ['abc', '1e309', '150.5', '99', '-99', '100001']) {
@@ -189,8 +195,10 @@ test('capture sends exact valid odds or intentional null for an empty field', as
     sent.push(JSON.parse(JSON.stringify(body.pick)));
     return { pick: pick({ ...body.pick }) };
   });
+  await ui.get('picks-unlock').fire('click');
   for (const [value, expected] of [['+350', 350], [' -110 ', -110], ['', null]]) {
     await ui.get('picks-add').fire('click');
+    ui.get('pick-account').value = account('danny', 0);
     ui.fields.get('originalText').value = 'Example source evidence.';
     ui.fields.get('odds').value = value;
     await ui.get('pick-form').fire('submit');
@@ -259,4 +267,221 @@ test('WebMCP read rejects failed or canceled fresh reads instead of returning ca
   assert.match(ui.get('picks-message').textContent, /Network unavailable/);
   await assert.rejects(read.execute({}), /Could not read fresh picks/);
   assert.equal(calls, 3);
+});
+
+const lines = ui => ui.get('picks-clean-list').children.map(node => node.textContent);
+
+test('a creator’s accounts are selectable and captured under the one creator id', async () => {
+  const sent = [];
+  const ui = harness(async body => {
+    if (body.action === 'read') return desk();
+    sent.push(JSON.parse(JSON.stringify(body.pick)));
+    return { pick: pick({ ...body.pick }) };
+  });
+  await ui.get('picks-unlock').fire('click');
+  await ui.get('picks-add').fire('click');
+  assert.deepEqual(ui.get('pick-account').children.map(option => option.value), ['', account('danny', 0), account('danny', 1), account('danny', 2)]);
+  assert.deepEqual(ui.get('pick-account').children.map(option => option.textContent), ['Select the account', ...ROSTER_LIST[0].accounts.map(entry => entry.platform)]);
+  ui.get('pick-account').value = account('danny', 2);
+  ui.fields.get('originalText').value = 'Texans moneyline tonight.';
+  ui.fields.get('selection').value = 'Texans';
+  await ui.get('pick-form').fire('submit');
+  assert.equal(ui.get('pick-form-error').textContent, '');
+  assert.equal(sent.at(-1).sourceId, 'danny');
+  assert.equal(sent.at(-1).accountId, account('danny', 2));
+});
+
+test('the clean list shows one plain line per confirmed pick, deduplicated across a creator’s accounts', async () => {
+  const instagram = pick({
+    id: 'danny-ig', sourceId: 'danny', accountId: account('danny', 0), sport: 'NFL', market: 'Moneyline',
+    selection: 'Texans', event: 'Texans at Colts', originalText: 'Texans moneyline tonight.',
+  });
+  const tiktok = pick({ ...instagram, id: 'danny-tt', accountId: account('danny', 1), odds: 120 });
+  const total = pick({
+    id: 'cru-total', sourceId: 'cru', accountId: account('cru', 1), sport: 'NFL', market: 'Total',
+    selection: 'over 42.5', event: 'Bengals–Buccaneers', originalText: 'Bengals–Buccaneers over 42.5 for me.',
+  });
+  const ui = harness(async () => desk([instagram, tiktok, total]));
+  await ui.get('picks-unlock').fire('click');
+  assert.deepEqual(lines(ui), ['- Texans moneyline', '- Bengals–Buccaneers over 42.5']);
+  assert.equal(ui.get('picks-clean-held').textContent, '');
+  // The clean list carries no captions, post times, platforms, or check notes.
+  const shown = ui.get('picks-clean-list').textContent;
+  for (const leak of ['Instagram', 'TikTok', account('danny', 0), 'tonight', '2026-09-11', 'https://'])
+    assert.equal(shown.includes(leak), false, `clean list leaked ${leak}`);
+});
+
+test('unclear, hedged and unreviewed picks are held back with the reason kept out of the clean list', async () => {
+  const good = pick({
+    id: 'keep', sourceId: 'nick', accountId: account('nick', 1), sport: 'NFL', market: 'Spread',
+    selection: 'Cowboys -3.5', event: 'Cowboys at Giants', originalText: 'Cowboys -3.5 is the play.',
+  });
+  const held = [
+    pick({ id: 'hedge', sourceId: 'nick', sport: 'NFL', market: 'Moneyline', selection: 'Leaning Bears', event: 'Bears at Packers', originalText: 'Leaning Bears here.' }),
+    pick({ id: 'question', sourceId: 'cru', sport: 'NFL', market: 'Moneyline', selection: 'Jets?', event: 'Jets at Bills', originalText: 'Jets? not sure' }),
+    pick({ id: 'unsupported', sourceId: 'cru', sport: 'NFL', market: 'Spread', selection: 'Broncos -7.5 first half', event: 'Broncos at Raiders', originalText: 'Something else entirely about a different game.' }),
+    pick({ id: 'late', sourceId: 'stunad', sport: 'NFL', market: 'Moneyline', selection: 'Rams', event: 'Rams at Seahawks', originalText: 'Rams moneyline.', capturedBeforeStart: false }),
+    pick({ id: 'needs-review', sourceId: 'bat', status: 'review', selection: 'Example player home run', originalText: 'Example player home run.' }),
+    pick({ id: 'no-link', sourceId: 'bat', sourceUrl: '', selection: 'Another example player home run', originalText: 'Another example player home run.' }),
+  ];
+  const ui = harness(async () => desk([good, ...held]));
+  await ui.get('picks-unlock').fire('click');
+  assert.deepEqual(lines(ui), ['- Cowboys -3.5']);
+  assert.equal(ui.get('picks-clean-held').textContent, '6 picks are held back. The reason for each stays in the private record.');
+  const shown = ui.get('picks-clean-list').textContent + ui.get('picks-clean-held').textContent;
+  for (const leak of ['Leaning', 'Jets', 'Broncos', 'Rams', 'evidence', 'question'])
+    assert.equal(shown.includes(leak), false, `held-back detail leaked ${leak}`);
+  const stored = JSON.parse(await ui.tool('dashboard_picks_read').execute({}));
+  assert.deepEqual(stored.cleanList, ['Cowboys -3.5']);
+  assert.deepEqual(stored.heldBack.map(item => item.id).sort(), ['hedge', 'late', 'needs-review', 'no-link', 'question', 'unsupported']);
+  assert.match(stored.heldBack.find(item => item.id === 'unsupported').reason, /not supported by the stored original evidence/);
+  assert.match(stored.heldBack.find(item => item.id === 'late').reason, /before the event started/);
+});
+
+test('the page holds no roster until it is unlocked, then mirrors the private one', async () => {
+  const ui = harness(async () => desk());
+  assert.equal(ui.context.window.PitchfordPicks.sources().length, 0, 'a locked page knows no creator');
+  assert.equal(ui.get('pick-source').children.length, 0);
+  assert.equal(ui.get('picks-check-source').children.length, 0);
+  await ui.get('picks-unlock').fire('click');
+  const sources = JSON.parse(JSON.stringify(ui.context.window.PitchfordPicks.sources()));
+  assert.deepEqual(sources.map(creator => creator.id), PICK_ROSTER.map(creator => creator.id));
+  assert.deepEqual(sources.flatMap(creator => creator.accounts.map(account => account.url)), PICK_ROSTER.flatMap(creator => creator.accounts.map(account => account.url)));
+  const ids = sources.flatMap(creator => creator.accounts.map(account => account.id));
+  assert.equal(new Set(ids).size, ids.length);
+  for (const account of sources.flatMap(creator => creator.accounts)) assert.match(account.url, /^https:\/\//);
+  assert.equal(ui.get('picks-check-source').children.length, PICK_ROSTER.length);
+});
+
+test('the capture form requires an account when the creator has more than one', async () => {
+  let calls = 0;
+  const ui = harness(async body => { if (body.action === 'read') return desk(); calls++; return { pick: pick({ ...body.pick }) }; });
+  await ui.get('picks-unlock').fire('click');
+  await ui.get('picks-add').fire('click');
+  assert.equal(ui.get('pick-account').value, '');
+  assert.equal(ui.get('pick-account').children[0].textContent, 'Select the account');
+  ui.fields.get('originalText').value = 'Texans moneyline tonight.';
+  ui.fields.get('selection').value = 'Texans';
+  const event = await ui.get('pick-form').fire('submit');
+  assert.equal(event.defaultPrevented, true);
+  assert.equal(calls, 0, 'a pick with no account must never reach the API');
+  assert.match(ui.get('pick-form-error').textContent, /accounts this pick came from/);
+  assert.equal(ui.get('pick-dialog').open, true);
+  // A creator with one account is filled in automatically rather than left blank.
+  ui.fields.get('sourceId').value = 'stunad';
+  await ui.fields.get('sourceId').fire('change');
+  assert.equal(ui.get('pick-account').value, account('stunad', 0));
+  assert.deepEqual(ui.get('pick-account').children.map(option => option.textContent), ROSTER_LIST[1].accounts.map(entry => entry.platform));
+  await ui.get('pick-form').fire('submit');
+  assert.equal(ui.get('pick-form-error').textContent, '');
+  assert.equal(calls, 1);
+});
+
+test('a historical pick with no recorded account stays editable and unchanged', async () => {
+  const legacy = pick({ id: 'legacy', sourceId: 'danny', sport: 'NFL', market: 'Moneyline', selection: 'Texans', event: 'Texans at Colts', originalText: 'Texans moneyline tonight.' });
+  delete legacy.accountId;
+  const sent = [];
+  const ui = harness(async body => {
+    if (body.action === 'read') return desk([legacy]);
+    sent.push(JSON.parse(JSON.stringify(body)));
+    return { pick: { ...legacy, revision: 2 } };
+  });
+  await ui.get('picks-unlock').fire('click');
+  await ui.get('picks-list').children[0].fire('click');
+  await ui.get('pick-edit').fire('click');
+  assert.equal(ui.get('pick-account').children[0].textContent, 'Account not recorded');
+  assert.equal(ui.get('pick-account').value, '');
+  assert.equal(ui.get('pick-account').disabled, true);
+  ui.fields.get('reason').value = 'Correcting the event name only.';
+  await ui.get('pick-form').fire('submit');
+  assert.equal(ui.get('pick-form-error').textContent, '');
+  assert.equal(sent.at(-1).action, 'edit');
+  assert.equal(sent.at(-1).pick.accountId, '');
+});
+
+// Fixture transcripts. Invented wording for tests only; no reel was opened.
+const REEL = [
+  'Alright, welcome back to the show.',
+  'Give me Texans moneyline tonight.',
+  'I would have to lean Bengals–Buccaneers over 42.5 on this one.',
+  'Somebody in the comments said take the Jets, I am not touching that.',
+  'The play is Cowboys -3.5.',
+  'I mean, the weather could be a factor.',
+  'Maybe the Rams later, we will see.',
+].join(' ');
+
+test('reel extraction separates firm picks from leans and ignores relayed or empty lines', async () => {
+  const ui = harness(async () => desk());
+  const { candidates, ignored } = ui.context.window.PitchfordPicks.extractFromTranscript(REEL);
+  assert.deepEqual(JSON.parse(JSON.stringify(candidates.map(c => [c.kind, c.selection]))), [
+    ['firm', 'Texans moneyline tonight'],
+    ['lean', 'Bengals–Buccaneers over 42.5 on this one'],
+    ['firm', 'Cowboys -3.5'],
+    ['lean', 'the Rams later, we will see'],
+  ]);
+  const skipped = JSON.parse(JSON.stringify(ignored));
+  assert.equal(skipped.some(item => /comments/.test(item.sentence) && /Relays/.test(item.reason)), true);
+  assert.equal(candidates.some(c => /Jets/.test(c.selection)), false, 'a viewer comment must never become a pick');
+  assert.equal(skipped.some(item => /weather/.test(item.sentence)), true);
+  assert.equal(ui.context.window.PitchfordPicks.extractFromTranscript('').candidates.length, 0);
+});
+
+test('no transcription runtime is installed, so the local adapter reports the missing dependency', async () => {
+  const ui = harness(async () => desk());
+  const listed = JSON.parse(await ui.tool('dashboard_reel_transcribers').execute({}));
+  assert.deepEqual(listed, [
+    { id: 'provided', label: 'Transcript supplied by the caller', available: true },
+    { id: 'local-whisper', label: 'Local Whisper runtime', available: false },
+  ]);
+  await assert.rejects(
+    ui.tool('dashboard_reel_intake').execute({ transcriber: 'local-whisper', sourceId: 'danny', accountId: account('danny', 1), sourceUrl: 'https://example.com/private-reel/1' }),
+    /No local transcription runtime is installed/,
+  );
+});
+
+test('reel intake stores the transcript privately and returns spoken selections without saving a pick', async () => {
+  const sent = [];
+  const ui = harness(async body => {
+    if (body.action === 'read') return { ...desk(), transcripts: [] };
+    sent.push(JSON.parse(JSON.stringify(body)));
+    return { transcript: { id: 'reel-1', ...body.transcript } };
+  });
+  const result = JSON.parse(await ui.tool('dashboard_reel_intake').execute({
+    transcriber: 'provided', sourceId: 'danny', accountId: account('danny', 1),
+    sourceUrl: 'https://example.com/private-reel/1',
+    transcript: REEL, engine: 'supplied-by-browser-run', transcribedAt: '2026-09-14T15:00:00Z',
+  }));
+  assert.equal(result.transcriptId, 'reel-1');
+  assert.equal(result.candidates.length, 4);
+  assert.equal(sent.filter(body => body.action === 'save').length, 0, 'intake must not create picks on its own');
+  const stored = sent.find(body => body.action === 'transcript').transcript;
+  assert.equal(stored.medium, 'audio');
+  assert.equal(stored.accountId, account('danny', 1));
+  assert.equal(stored.engine, 'supplied-by-browser-run');
+  assert.equal(stored.transcript, REEL);
+  assert.equal(stored.transcribedAt, '2026-09-14T15:00:00Z');
+});
+
+test('leans are listed separately and never reach eligible picks or source records', async () => {
+  const firm = pick({
+    id: 'firm', sourceId: 'danny', accountId: account('danny', 1), sport: 'NFL', market: 'Moneyline',
+    selection: 'Texans', event: 'Texans at Colts', originalText: 'Give me Texans moneyline tonight.',
+    status: 'win', odds: -110,
+  });
+  const lean = pick({
+    id: 'lean', kind: 'lean', sourceId: 'danny', accountId: account('danny', 1), sport: 'NFL', market: 'Total',
+    selection: 'over 42.5', event: 'Bengals–Buccaneers', originalText: 'I would have to lean Bengals–Buccaneers over 42.5.',
+    status: 'win', odds: -110,
+  });
+  const ui = harness(async () => desk([firm, lean]));
+  await ui.get('picks-unlock').fire('click');
+  assert.deepEqual(lines(ui), ['- Texans moneyline']);
+  assert.deepEqual(ui.get('picks-leans-list').children.map(node => node.textContent), ['- Bengals–Buccaneers over 42.5']);
+  assert.equal(ui.get('picks-clean-held').textContent, '', 'a lean is not a held-back pick');
+  const record = ui.context.window.PitchfordPicks.stats([firm, lean]);
+  assert.equal(record.wins, 1);
+  assert.equal(record.eligible, 1);
+  const stored = JSON.parse(await ui.tool('dashboard_picks_read').execute({}));
+  assert.deepEqual(stored.cleanList, ['Texans moneyline']);
+  assert.deepEqual(stored.leans.map(item => item.text), ['Bengals–Buccaneers over 42.5']);
 });

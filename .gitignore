@@ -1,3 +1,16 @@
 __pycache__/
 public/
 news.tmp
+preview/
+# Built by .github/workflows/rebuild.yml on its own runner and served from the
+# Pages artifact; a committed copy is never published. Confirmed 14 Sept 2026:
+# pages-build-deployment last ran 10 Sept, every deployment since is the workflow's.
+index.html
+
+# Private creator roster. Deployed as the PICKS_ROSTER Worker secret, never tracked.
+picks-roster.json
+
+# Local timestamped backups and Graphify exports. Never published. Kept ignored so
+# deploy.sh's "git add -A" can never sweep a pre-migration copy of the roster in.
+backups/
+graphify-out/

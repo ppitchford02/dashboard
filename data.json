@@ -21,11 +21,6 @@
       "status": "on"
     },
     {
-      "name": "Morning Brief",
-      "schedule": "WKDY 08:00",
-      "status": "on"
-    },
-    {
       "name": "Law School OS",
       "schedule": "09:00 / 12:00 / 18:00 ET",
       "status": "on"

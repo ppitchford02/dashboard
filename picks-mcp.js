@@ -48,6 +48,17 @@ async function request(action, payload = {}) {
   return body;
 }
 
+// The health center reads this local mirror.  It contains only the final
+// aggregate receipt, never the automation token or private pick evidence.
+function mirrorReceipt(receipt) {
+  const directory = path.join(__dirname, 'agent-health');
+  const target = path.join(directory, 'sports-picks.json');
+  const temporary = `${target}.${process.pid}.tmp`;
+  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(temporary, `${JSON.stringify(receipt)}\n`, { mode: 0o600 });
+  fs.renameSync(temporary, target);
+}
+
 function result(value) { return { content:[{type:'text',text:JSON.stringify(value)}] }; }
 function failure(error) { return { content:[{type:'text',text:JSON.stringify({error:error.message})}], isError:true }; }
 
@@ -91,7 +102,10 @@ async function handle(message) {
         }});
       }
       else if (message.params?.name === 'sports_picks_source_check') value = await request('check', args);
-      else if (message.params?.name === 'sports_picks_run_receipt') value = await request('receipt', {receipt:args});
+      else if (message.params?.name === 'sports_picks_run_receipt') {
+        value = await request('receipt', {receipt:args});
+        mirrorReceipt(value.receipt);
+      }
       else throw new Error('Unknown Sports Picks tool.');
       return { jsonrpc:'2.0', id:message.id, result:result(value) };
     } catch (error) { return { jsonrpc:'2.0', id:message.id, result:failure(error) }; }

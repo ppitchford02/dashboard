@@ -18,3 +18,8 @@ picks-agent-token.txt
 # deploy.sh's "git add -A" can never sweep a pre-migration copy of the roster in.
 backups/
 graphify-out/
+
+# Local evidence bridge between Codex Agent Health and Claude. Receipts and
+# outbox instructions may contain private operational detail and are never published.
+agent-health/sports-picks.json
+agent-health/outbox/

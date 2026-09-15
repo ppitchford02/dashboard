@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Deterministic local health report for Preston's agent systems."""
 from __future__ import annotations
-import argparse, json, os, subprocess, tempfile, urllib.error, urllib.request
+import argparse, json, os, re, subprocess, tempfile, urllib.error, urllib.request
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -119,7 +119,28 @@ def collections() -> Finding:
     if runs: return Finding('Collections', 'green', iso_age(runs), 'None.')
     return Finding('Collections', 'yellow', 'No local Collections run-state file found.', 'Run only when Preston supplies a case; preserve the paid-run checkpoint and resume guard.')
 
+# The health check runs in the device shell, whose egress proxy allow-lists by host.
+# ppitchford02.github.io is not allow-listed, so fetching the published receipt there
+# fails with "Tunnel connection failed: 403 Forbidden". api.github.com IS allow-listed
+# and serves this public repo's Pages deployments without a token, so deployment state
+# is verified from there. The published receipt is read only as an optional extra.
+API = os.environ.get('AGENT_HEALTH_GITHUB_API', 'https://api.github.com').rstrip('/')
 RECEIPT_URL = os.environ.get('AGENT_HEALTH_DASHBOARD_RECEIPT_URL', 'https://ppitchford02.github.io/dashboard/dashboard.json')
+
+def repo_slug(repo: Path) -> str | None:
+    override = os.environ.get('AGENT_HEALTH_DASHBOARD_REPO')
+    if override:
+        return override.strip()
+    try:
+        done = subprocess.run(['git', '-C', str(repo), 'remote', 'get-url', 'origin'],
+                              capture_output=True, text=True, timeout=10,
+                              env={**os.environ, 'GIT_OPTIONAL_LOCKS': '0'})
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    match = re.search(r'github\.com[:/]+([^/]+/[^/\s]+?)(?:\.git)?$', done.stdout.strip())
+    return match.group(1) if match else None
 
 def local_origin_sha(repo: Path) -> str | None:
     """Last-known origin/main, read without fetching. No network, no ref changes."""
@@ -132,17 +153,17 @@ def local_origin_sha(repo: Path) -> str | None:
     sha = done.stdout.strip()
     return sha if done.returncode == 0 and len(sha) == 40 else None
 
-def live_receipt() -> tuple[dict | None, str]:
-    """The workflow publishes dashboard.json beside index.html, so the live copy
-    states the commit the published page was actually built from. Unreachable is
-    unverified, never a failure."""
+def get_json(url: str):
+    request = urllib.request.Request(url, headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'agent-health'})
+    with urllib.request.urlopen(request, timeout=10) as response:
+        return json.loads(response.read().decode('utf-8'))
+
+def published_commit() -> str:
+    """Optional. Never decides the finding; the egress proxy usually blocks it."""
     try:
-        with urllib.request.urlopen(RECEIPT_URL, timeout=8) as response:
-            return json.loads(response.read().decode('utf-8')), ''
-    except urllib.error.URLError as error:
-        return None, f'{RECEIPT_URL} unreachable ({error.reason}).'
-    except (OSError, ValueError) as error:
-        return None, f'{RECEIPT_URL} unreadable ({error}).'
+        return str(get_json(RECEIPT_URL).get('commit', '')).strip()
+    except Exception:
+        return ''
 
 def dashboard() -> Finding:
     if DASH is None:
@@ -152,16 +173,39 @@ def dashboard() -> Finding:
     expected = local_origin_sha(DASH)
     if expected is None:
         return Finding('Dashboard', 'yellow', 'Could not read origin/main from the local repository.', 'Treat deployment state as unverified until origin/main resolves.')
-    receipt, problem = live_receipt()
-    if receipt is None:
-        return Finding('Dashboard', 'yellow', problem, 'Treat the published page as unverified; do not claim it is current without its receipt.')
-    published = str(receipt.get('commit', '')).strip()
-    built_at = receipt.get('builtAt', 'unknown time')
-    if not published:
-        return Finding('Dashboard', 'yellow', f'Live receipt at {RECEIPT_URL} records no commit.', 'Treat the published page as unverified until the receipt names its commit.')
-    if published == expected:
-        return Finding('Dashboard', 'green', f'Published page is built from {published[:7]} (origin/main), built {built_at}.', 'None.')
-    return Finding('Dashboard', 'yellow', f'Published page is built from {published[:7]} but origin/main is {expected[:7]} (receipt built {built_at}).', 'A deploy may still be in flight; re-check before treating the public page as current.')
+    slug = repo_slug(DASH)
+    if slug is None:
+        return Finding('Dashboard', 'yellow', 'Could not determine the GitHub repository from the origin remote.', 'Treat deployment state as unverified until the origin remote resolves.')
+    url = os.environ.get('AGENT_HEALTH_DEPLOYMENTS_URL', f'{API}/repos/{slug}/deployments?environment=github-pages&per_page=1')
+    try:
+        deployments = get_json(url)
+    except Exception as error:
+        return Finding('Dashboard', 'yellow', f'GitHub deployments API unreachable ({error}).', 'Treat the published page as unverified; do not claim it is current without its deployment record.')
+    if not isinstance(deployments, list) or not deployments:
+        return Finding('Dashboard', 'yellow', f'No github-pages deployment is recorded for {slug}.', 'Treat the published page as unverified until a Pages deployment is recorded.')
+    latest = deployments[0]
+    published = str(latest.get('sha', '')).strip()
+    created = latest.get('created_at', 'unknown time')
+    state = 'unknown'
+    statuses = latest.get('statuses_url')
+    if statuses:
+        try:
+            target = str(statuses)
+            if target.startswith(('http://', 'https://')) and '?' not in target:
+                target += '?per_page=1'
+            rows = get_json(target)
+            if isinstance(rows, list) and rows:
+                state = str(rows[0].get('state', 'unknown'))
+        except Exception:
+            state = 'unknown'
+    if published != expected:
+        return Finding('Dashboard', 'yellow', f'Pages last deployed {published[:7] or "?"} but origin/main is {expected[:7]} (deployed {created}).', 'A deploy may still be in flight; re-check before treating the public page as current.')
+    if state not in {'success', 'unknown'}:
+        return Finding('Dashboard', 'yellow', f'Pages deployment for {published[:7]} reports state "{state}" (deployed {created}).', 'Check the Actions run for that commit before treating the public page as current.')
+    receipt = published_commit()
+    extra = f'; published receipt agrees ({receipt[:7]})' if receipt == expected else ''
+    shown = state if state != 'unknown' else 'state unread'
+    return Finding('Dashboard', 'green', f'Pages deployed {published[:7]} (origin/main), {shown}, at {created}{extra}.', 'None.')
 
 def write_outbox(findings: list[Finding]) -> None:
     if OUTBOX is None:

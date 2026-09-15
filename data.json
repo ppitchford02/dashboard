@@ -74,6 +74,15 @@
       "source_id": "4875802:quiz:728826"
     },
     {
+      "title": "State Statutes Problem Set",
+      "due": "2026-09-18T23:59",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4875802:dropbox:765441"
+    },
+    {
       "title": "Self-Evaluation 4",
       "due": "2026-09-17T18:30",
       "course": "Lawyering Analysis and Research",
@@ -101,13 +110,13 @@
       "source_id": "4875802:quiz:728828"
     },
     {
-      "title": "State Statutes Problem Set",
-      "due": "2026-09-18T23:59",
+      "title": "In-Class Timed Research Assessment (Class 14)",
+      "due": "2026-10-06T23:59",
       "course": "Lawyering Analysis and Research",
       "kind": "deadline",
-      "note": "dropbox",
+      "note": "exam",
       "source": "law-plan",
-      "source_id": "4875802:dropbox:765441"
+      "source_id": "exam:lar:2026-10-06"
     },
     {
       "title": "Week Five Quiz",
@@ -378,7 +387,7 @@
   "law_school_status": {
     "last_successful_capture": "2026-09-14T12:01:37-04:00",
     "deadline_source": "law plan",
-    "deadline_count": 26,
+    "deadline_count": 27,
     "schedule_timezone": "America/New_York",
     "schedule": [
       "09:00",

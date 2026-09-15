@@ -625,12 +625,12 @@ const PICK_MARKETS = new Set(["Home run", "Moneyline", "Spread", "Total", "Playe
 const PICK_STATUSES = new Set(["pending", "review", "win", "loss", "push", "void"]);
 const PICK_RESULTS = new Set(["win", "loss", "push", "void"]);
 const CHECK_STATUSES = new Set(["Checked", "No new posts", "Sign-in needed", "Access blocked", "Needs review"]);
-const PICK_ACTIONS = new Set(["read", "save", "check", "edit", "settle", "archive", "import", "transcript"]);
+const PICK_ACTIONS = new Set(["read", "save", "check", "edit", "settle", "archive", "import", "transcript", "receipt"]);
 // The scheduled task authenticates with its own revocable secret instead of the
 // dashboard passphrase. It may only read, capture new picks, record source checks,
 // and store reel evidence. Corrections, results, archiving and imports are not on
 // this list, so automation cannot reach an existing record at all.
-const AGENT_ACTIONS = new Set(["read", "save", "check", "transcript"]);
+const AGENT_ACTIONS = new Set(["read", "save", "check", "transcript", "receipt"]);
 // A selection is firm only when the creator stated it outright. Qualified wording
 // stays a lean: visible, never counted as a confirmed pick or parlay input.
 const PICK_KINDS = new Set(["firm", "lean"]);
@@ -641,6 +641,7 @@ const TRANSCRIPT_MEDIUMS = new Set(["audio"]);
 // pick by hand. Imports and corrections to existing records are not subject to it,
 // so historical records are never touched by this rule.
 const CAPTURE_OUTCOMES = new Set(["firm", "lean", "unclear"]);
+const RUN_OUTCOMES = new Set(["complete", "no_work", "blocked", "failed"]);
 
 class PickError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -843,6 +844,33 @@ function checkedResult(result) {
   return result;
 }
 
+function pickCount(value, label, max) {
+  if (!Number.isSafeInteger(value) || value < 0 || value > max) throw new PickError(`Enter a valid ${label}.`);
+  return value;
+}
+
+function validateRunReceipt(input) {
+  const value = pickObject(input, "automation run receipt");
+  const outcome = pickChoice(value.outcome, RUN_OUTCOMES, "a run outcome");
+  const accountsChecked = pickCount(value.accountsChecked, "accounts-checked count", 100);
+  const accountsBlocked = pickCount(value.accountsBlocked, "blocked-accounts count", 100);
+  const picksSaved = pickCount(value.picksSaved, "saved-picks count", 500);
+  const checksSaved = pickCount(value.checksSaved, "saved-checks count", 100);
+  const note = pickText(value.note === undefined ? "" : value.note, "run note", 2000);
+  const startedAt = pickTime(value.startedAt, "run start time");
+  const totalAccounts = PICK_ROSTER.reduce((count, creator) => count + creator.accounts.length, 0);
+  if ((outcome === "complete" || outcome === "no_work") && (accountsChecked !== totalAccounts || accountsBlocked !== 0)) {
+    throw new PickError("A complete run receipt must account for every configured source account with none blocked.");
+  }
+  if ((outcome === "blocked" || outcome === "failed") && !note) throw new PickError("Explain what blocked or failed this run.");
+  return { id: crypto.randomUUID(), outcome, accountsChecked, accountsBlocked, picksSaved, checksSaved, note, startedAt, completedAt: new Date().toISOString() };
+}
+
+function receiptFromRow(row) {
+  if (!row) return null;
+  return { id: row.id, outcome: row.outcome, accountsChecked: Number(row.accounts_checked), accountsBlocked: Number(row.accounts_blocked), picksSaved: Number(row.picks_saved), checksSaved: Number(row.checks_saved), note: row.note, startedAt: row.started_at, completedAt: row.completed_at };
+}
+
 function validateSourceCheck(input, importing = false) {
   const value = pickObject(input, "source check");
   return {
@@ -972,22 +1000,30 @@ async function importPicks(db, body) {
 async function runPicksAction(body, db) {
   const action = pickChoice(body.action, PICK_ACTIONS, "a supported picks action");
   if (action === "read") {
-    const [picks, checks, revisions, transcripts] = await Promise.all([
+    const [picks, checks, revisions, transcripts, receipts] = await Promise.all([
       db.prepare("SELECT * FROM picks WHERE owner=? ORDER BY created_at DESC, id DESC").bind(PICKS_OWNER).all(),
       db.prepare("SELECT * FROM source_checks WHERE owner=? ORDER BY checked_at DESC, id DESC LIMIT 60").bind(PICKS_OWNER).all(),
       db.prepare("SELECT * FROM pick_revisions WHERE owner=? ORDER BY changed_at DESC, id DESC LIMIT 300").bind(PICKS_OWNER).all(),
       db.prepare("SELECT * FROM reel_transcripts WHERE owner=? ORDER BY created_at DESC, id DESC LIMIT 100").bind(PICKS_OWNER).all(),
+      db.prepare("SELECT * FROM automation_run_receipts WHERE owner=? ORDER BY completed_at DESC, id DESC LIMIT 1").bind(PICKS_OWNER).all(),
     ]);
-    [picks, checks, revisions, transcripts].forEach(checkedResult);
+    [picks, checks, revisions, transcripts, receipts].forEach(checkedResult);
     return picksReply({
       roster: PICK_ROSTER,
       picks: picks.results.map(pickFromRow),
       checks: checks.results.map(row => ({ id: row.id, sourceId: row.source_id, status: row.status, note: row.note, checkedAt: row.checked_at })),
       revisions: revisions.results.map(row => ({ id: row.id, pickId: row.pick_id, reason: row.reason, snapshot: row.snapshot, changedAt: row.changed_at })),
       transcripts: transcripts.results.map(transcriptFromRow),
+      latestRun: receiptFromRow(receipts.results[0]),
     });
   }
   if (action === "import") return importPicks(db, body);
+  if (action === "receipt") {
+    const receipt = validateRunReceipt(body.receipt);
+    checkedResult(await db.prepare("INSERT INTO automation_run_receipts(id,owner,outcome,accounts_checked,accounts_blocked,picks_saved,checks_saved,note,started_at,completed_at) VALUES(?,?,?,?,?,?,?,?,?,?)")
+      .bind(receipt.id, PICKS_OWNER, receipt.outcome, receipt.accountsChecked, receipt.accountsBlocked, receipt.picksSaved, receipt.checksSaved, receipt.note, receipt.startedAt, receipt.completedAt).run());
+    return picksReply({ receipt }, 201);
+  }
   const now = new Date().toISOString();
   if (action === "transcript") {
     const transcript = validateTranscript(body.transcript);

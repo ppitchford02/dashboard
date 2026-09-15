@@ -60,6 +60,23 @@ CREATE TABLE IF NOT EXISTS source_checks (
 );
 CREATE INDEX IF NOT EXISTS idx_checks_owner_time ON source_checks(owner,checked_at);
 
+
+-- A scheduled pass is only verified when it writes this final receipt. A clean
+-- process exit without a receipt is deliberately indistinguishable from no run.
+CREATE TABLE IF NOT EXISTS automation_run_receipts (
+  id TEXT PRIMARY KEY NOT NULL,
+  owner TEXT NOT NULL,
+  outcome TEXT NOT NULL CHECK (outcome IN ('complete','no_work','blocked','failed')),
+  accounts_checked INTEGER NOT NULL CHECK (accounts_checked >= 0),
+  accounts_blocked INTEGER NOT NULL CHECK (accounts_blocked >= 0),
+  picks_saved INTEGER NOT NULL CHECK (picks_saved >= 0),
+  checks_saved INTEGER NOT NULL CHECK (checks_saved >= 0),
+  note TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  completed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_run_receipts_owner_time ON automation_run_receipts(owner,completed_at);
+
 CREATE TABLE IF NOT EXISTS pick_revisions (
   id TEXT PRIMARY KEY NOT NULL,
   owner TEXT NOT NULL,

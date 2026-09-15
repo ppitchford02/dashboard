@@ -551,6 +551,22 @@ test('the automation token authenticates without the passphrase and only for its
   assert.equal(untouched.status, 'pending');
 });
 
+test('a scheduled run is verified only by a final receipt that accounts for every configured account', async () => {
+  const db = database();
+  const asAgent = body => api(db, {...body, agentToken: AGENT}, {env: {PICKS_AGENT_TOKEN: AGENT}, agent: true});
+  const accountCount = ROSTER_LIST.reduce((total, creator) => total + creator.accounts.length, 0);
+  const partial = await asAgent({action:'receipt', receipt:{outcome:'complete', accountsChecked:accountCount - 1, accountsBlocked:0, picksSaved:0, checksSaved:0, note:'', startedAt:'2026-09-15T15:00:00Z'}});
+  assert.equal(partial.status, 400);
+  const saved = await asAgent({action:'receipt', receipt:{outcome:'no_work', accountsChecked:accountCount, accountsBlocked:0, picksSaved:0, checksSaved:accountCount, note:'All configured accounts checked; no new picks.', startedAt:'2026-09-15T15:00:00Z'}});
+  assert.equal(saved.status, 201, JSON.stringify(saved.data));
+  const desk = (await asAgent({action:'read'})).data;
+  assert.equal(desk.latestRun.outcome, 'no_work');
+  assert.equal(desk.latestRun.accountsChecked, accountCount);
+  const blocked = await asAgent({action:'receipt', receipt:{outcome:'blocked', accountsChecked:0, accountsBlocked:accountCount, picksSaved:0, checksSaved:0, note:'The local bridge was unavailable.', startedAt:'2026-09-15T21:00:00Z'}});
+  assert.equal(blocked.status, 201);
+  assert.equal((await asAgent({action:'read'})).data.latestRun.outcome, 'blocked');
+});
+
 test('a wrong, short, or unset automation secret grants nothing', async () => {
   const db = database();
   for (const [env, token] of [

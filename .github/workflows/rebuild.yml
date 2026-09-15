@@ -51,6 +51,9 @@ jobs:
         run: |
           mkdir -p public
           cp index.html data.json news.json public/
+          printf '{"commit":"%s","builtAt":"%s","runId":"%s","ref":"%s"}\n' \
+            "$GITHUB_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$GITHUB_RUN_ID" "$GITHUB_REF_NAME" \
+            > public/dashboard.json
       - name: Upload for Pages
         if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3

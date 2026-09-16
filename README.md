@@ -150,6 +150,22 @@ silently overwriting concurrent edits; conflicts return a tool error.
 does not deploy `worker.js`. Existing secrets and bindings must be retained.
 Live model calls and production mutations are not exercised by the local tests.
 
+### The publishing path stays ordinary software
+
+Checked 16 Sept 2026 and unchanged: the dashboard builds, tests, publishes and
+verifies itself with no model in the path. The workflow runs the two regression
+suites, then `build.py`, then copies `index.html`, `data.json` and `news.json`
+into the Pages artifact along with `dashboard.json`, the deployment receipt
+carrying `$GITHUB_SHA`. `secrets.GITHUB_TOKEN` is the only secret it uses, and
+`build.py` needs no API key.
+
+`tests/test_publishing_stays_deterministic.py` is the guard. It fails if the
+build path or the workflow ever acquires a model call, an API key or an MCP
+dependency, if the suites stop running before the build, or if the deployment
+receipt disappears. It asserts about files only and changes no behaviour. The
+agent-status panel on the page is display data from `data.json`, not a
+dependency; nothing about publishing waits on an agent run.
+
 ## Sports Picks
 
 Sports Picks switches within the same page as Today, Study, Systems, and Later.

@@ -248,6 +248,28 @@ itself. Transcription is pluggable through an adapter interface. No local
 transcription runtime is installed, so that adapter reports itself unavailable
 and names the missing dependency rather than downloading anything.
 
+### Freshness gate (added 16 Sept 2026)
+
+The scheduled pass calls `sports_picks_freshness` first, before it reads,
+transcribes, classifies or captures anything. It hands the gate the source
+identifiers, exact post links, posted timestamps and content hashes it can see
+without interpreting them. The gate compares those against what the last
+successful aggregate receipt already covered, in `picks-freshness.js`, which
+calls no model, opens no network connection and checks no source.
+
+When nothing is new the gate writes the required aggregate receipt itself with
+`outcome: "no_work"` and zero picks, mirrors it to `agent-health/`, and returns
+`stop: true`; the pass is over and no model interpretation runs. When something
+is new it returns only that material, as the caller's own objects, so the exact
+post link survives for reopening. The same post arriving twice in one batch is
+released once.
+
+The index of what has been covered lives in
+`agent-health/sports-picks-seen.json`. It holds hashes, an account id and a
+posted timestamp, never a creator link or handle, and it is gitignored. It
+advances only when a successful aggregate receipt is written, so a pass that is
+abandoned or fails releases the same material again on the next run.
+
 The **Record a source check** form in the Sports Picks sidebar saves a source,
 status and observation note through the same private API used by the agent.
 Failed saves retain the note for correction or retry. A locked new device waits

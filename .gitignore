@@ -23,3 +23,7 @@ graphify-out/
 # outbox instructions may contain private operational detail and are never published.
 agent-health/sports-picks.json
 agent-health/outbox/
+
+# Freshness-gate index for the scheduled Sports Picks pass. Hashes only, no links,
+# but it is per-machine run state and is never published.
+agent-health/sports-picks-seen.json

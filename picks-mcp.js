@@ -6,11 +6,13 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const freshness = require('./picks-freshness.js');
 
 const WORKER_URL = process.env.PICKS_WORKER_URL || 'https://pitchford-os-ask.ppitchford02.workers.dev/picks';
 const TOKEN_FILE = process.env.PICKS_TOKEN_FILE || path.join(process.env.HOME || '', 'dashboard', 'picks-agent-token.txt');
 
 const tools = [
+  { name: 'sports_picks_freshness', description: 'Run FIRST, before reading or interpreting anything. Give the source identifiers, exact post links, posted timestamps and content hashes you can see without interpreting them. Returns only the material no previous successful receipt already covered. When it returns stop:true it has already written the run receipt and the pass is over: do not read, transcribe, classify or capture anything.', inputSchema: { type:'object', properties:{ startedAt:{type:'string'}, accountsChecked:{type:'integer',minimum:0}, accountsBlocked:{type:'integer',minimum:0}, checksSaved:{type:'integer',minimum:0}, note:{type:'string'}, candidates:{type:'array',items:{type:'object',properties:{sourceId:{type:'string'},accountId:{type:'string'},sourceUrl:{type:'string'},postedAt:{type:'string'},contentHash:{type:'string'}},required:['sourceId','accountId','sourceUrl'],additionalProperties:true}} }, required:['startedAt','candidates'], additionalProperties:false } },
   { name: 'sports_picks_read', description: 'Read the private Sports Picks desk and its configured creator roster. The local automation token is read privately from disk.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'sports_picks_capture', description: 'Save one new source pick to the private desk. The Worker derives firm, Lean, or review from originalText. Never invent unknown fields.', inputSchema: { type: 'object', properties: { sourceId:{type:'string'}, accountId:{type:'string'}, sport:{type:'string',enum:['NFL','MLB']}, market:{type:'string'}, selection:{type:'string'}, event:{type:'string'}, eventDate:{type:'string'}, odds:{type:['integer','null']}, postedAt:{type:'string'}, sourceUrl:{type:'string'}, originalText:{type:'string'}, capturedBeforeStart:{type:'boolean'}, checkedUrl:{type:'string'}, checkedAt:{type:'string'} }, required:['sourceId','accountId','sport','market','selection','event','eventDate','sourceUrl','originalText','capturedBeforeStart','checkedUrl','checkedAt'], additionalProperties:false } },
   { name: 'sports_picks_transcribe_video', description: 'Transcribe a creator video locally from its exact post URL, save the private audio transcript, and return its transcript id and spoken words. Use only for the creator’s own video; never captions or comments.', inputSchema: { type:'object', properties:{sourceId:{type:'string'},accountId:{type:'string'},sourceUrl:{type:'string'}}, required:['sourceId','accountId','sourceUrl'], additionalProperties:false } },
@@ -59,6 +61,10 @@ function mirrorReceipt(receipt) {
   fs.renameSync(temporary, target);
 }
 
+// Material the gate released this pass. It is marked as interpreted only when a
+// successful aggregate receipt is written, so an abandoned pass re-releases it.
+let pendingFresh = [];
+
 function result(value) { return { content:[{type:'text',text:JSON.stringify(value)}] }; }
 function failure(error) { return { content:[{type:'text',text:JSON.stringify({error:error.message})}], isError:true }; }
 
@@ -105,6 +111,26 @@ async function handle(message) {
       else if (message.params?.name === 'sports_picks_run_receipt') {
         value = await request('receipt', {receipt:args});
         mirrorReceipt(value.receipt);
+        if (pendingFresh.length) { freshness.commit(__dirname, pendingFresh, value.receipt); pendingFresh = []; }
+      }
+      else if (message.params?.name === 'sports_picks_freshness') {
+        // No network, no source check, no model: a comparison against the last
+        // successful receipt's coverage and nothing else.
+        const decision = freshness.evaluate(__dirname, args.candidates);
+        if (decision.stop) {
+          const receipt = freshness.zeroReceipt(args);
+          const written = await request('receipt', {receipt});
+          mirrorReceipt(written.receipt);
+          pendingFresh = [];
+          value = {stop:true, counts:decision.counts, lastReceiptCompletedAt:decision.lastReceiptCompletedAt,
+                   receipt:written.receipt,
+                   instruction:'Nothing is new since the last successful receipt. The receipt is written and this pass is complete. Do not read, transcribe, classify or capture anything.'};
+        } else {
+          pendingFresh = decision.fresh;
+          value = {stop:false, counts:decision.counts, lastReceiptCompletedAt:decision.lastReceiptCompletedAt,
+                   fresh:decision.fresh.map(f => f.candidate), skipped:decision.skipped,
+                   instruction:'Interpret only the material in fresh. Everything else was covered by an earlier successful receipt.'};
+        }
       }
       else throw new Error('Unknown Sports Picks tool.');
       return { jsonrpc:'2.0', id:message.id, result:result(value) };

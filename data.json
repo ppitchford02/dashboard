@@ -65,13 +65,13 @@
       "source_id": "4875802:dropbox:765440"
     },
     {
-      "title": "Citators Quiz",
-      "due": "2026-09-15T18:30",
+      "title": "Self-Evaluation 4",
+      "due": "2026-09-17T18:30",
       "course": "Lawyering Analysis and Research",
       "kind": "deadline",
       "note": "quiz",
       "source": "law-plan",
-      "source_id": "4875802:quiz:728826"
+      "source_id": "4875802:quiz:728843"
     },
     {
       "title": "State Statutes Problem Set",
@@ -83,13 +83,22 @@
       "source_id": "4875802:dropbox:765441"
     },
     {
-      "title": "Self-Evaluation 4",
+      "title": "State Statutes Quiz",
       "due": "2026-09-17T18:30",
       "course": "Lawyering Analysis and Research",
       "kind": "deadline",
       "note": "quiz",
       "source": "law-plan",
-      "source_id": "4875802:quiz:728843"
+      "source_id": "4875802:quiz:728828"
+    },
+    {
+      "title": "Citators Quiz",
+      "due": "2026-09-15T18:30",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "quiz",
+      "source": "law-plan",
+      "source_id": "4875802:quiz:728826"
     },
     {
       "title": "Midterm Exam- Requires Respondus LockDown Browser",
@@ -101,15 +110,6 @@
       "source_id": "4863882:quiz:726910"
     },
     {
-      "title": "State Statutes Quiz",
-      "due": "2026-09-17T18:30",
-      "course": "Lawyering Analysis and Research",
-      "kind": "deadline",
-      "note": "quiz",
-      "source": "law-plan",
-      "source_id": "4875802:quiz:728828"
-    },
-    {
       "title": "In-Class Timed Research Assessment (Class 14)",
       "due": "2026-10-06T23:59",
       "course": "Lawyering Analysis and Research",
@@ -117,15 +117,6 @@
       "note": "exam",
       "source": "law-plan",
       "source_id": "exam:lar:2026-10-06"
-    },
-    {
-      "title": "Week Five Quiz",
-      "due": "2026-09-20T23:59",
-      "course": "Lawyering Analysis and Writing I",
-      "kind": "deadline",
-      "note": "quiz",
-      "source": "law-plan",
-      "source_id": "4875804:quiz:747370"
     },
     {
       "title": "Pre-Class Legal Analysis Assignment (Contract Formation)",
@@ -137,6 +128,24 @@
       "source_id": "4875802:dropbox:765445"
     },
     {
+      "title": "Research Planning Quiz",
+      "due": "2026-09-22T18:30",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "quiz",
+      "source": "law-plan",
+      "source_id": "4875802:quiz:728827"
+    },
+    {
+      "title": "Week Five Quiz",
+      "due": "2026-09-20T23:59",
+      "course": "Lawyering Analysis and Writing I",
+      "kind": "deadline",
+      "note": "quiz",
+      "source": "law-plan",
+      "source_id": "4875804:quiz:747370"
+    },
+    {
       "title": "Pre-Class Legal Analysis Assignment (Waiver and Removal)",
       "due": "2026-09-24T18:30",
       "course": "Lawyering Analysis and Research",
@@ -144,6 +153,15 @@
       "note": "dropbox",
       "source": "law-plan",
       "source_id": "4875802:dropbox:765443"
+    },
+    {
+      "title": "Pre-Class Legal Analysis Assignment (Shopkeeper's Privilege)",
+      "due": "2026-09-29T18:30",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "dropbox",
+      "source": "law-plan",
+      "source_id": "4875802:dropbox:765451"
     },
     {
       "title": "Research Planning Problem Set",
@@ -162,15 +180,6 @@
       "note": "dropbox",
       "source": "law-plan",
       "source_id": "4875802:dropbox:765444"
-    },
-    {
-      "title": "Research Planning Quiz",
-      "due": "2026-09-22T18:30",
-      "course": "Lawyering Analysis and Research",
-      "kind": "deadline",
-      "note": "quiz",
-      "source": "law-plan",
-      "source_id": "4875802:quiz:728827"
     },
     {
       "title": "Pre-Class Hierarchy Review",
@@ -207,15 +216,6 @@
       "note": "dropbox",
       "source": "law-plan",
       "source_id": "4875804:dropbox:787387"
-    },
-    {
-      "title": "Pre-Class Legal Analysis Assignment (Shopkeeper's Privilege)",
-      "due": "2026-09-29T18:30",
-      "course": "Lawyering Analysis and Research",
-      "kind": "deadline",
-      "note": "dropbox",
-      "source": "law-plan",
-      "source_id": "4875802:dropbox:765451"
     },
     {
       "title": "Pre-Class Legal Analysis Assignment (Dog Bite)",

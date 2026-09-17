@@ -1005,7 +1005,10 @@ async function runPicksAction(body, db) {
       db.prepare("SELECT * FROM source_checks WHERE owner=? ORDER BY checked_at DESC, id DESC LIMIT 60").bind(PICKS_OWNER).all(),
       db.prepare("SELECT * FROM pick_revisions WHERE owner=? ORDER BY changed_at DESC, id DESC LIMIT 300").bind(PICKS_OWNER).all(),
       db.prepare("SELECT * FROM reel_transcripts WHERE owner=? ORDER BY created_at DESC, id DESC LIMIT 100").bind(PICKS_OWNER).all(),
-      db.prepare("SELECT * FROM automation_run_receipts WHERE owner=? ORDER BY completed_at DESC, id DESC LIMIT 1").bind(PICKS_OWNER).all(),
+      // rowid is insertion order. The previous tiebreaker was the receipt's random
+      // UUID, so two receipts written in the same millisecond came back in an
+      // arbitrary order and the older run could read as the latest one.
+      db.prepare("SELECT * FROM automation_run_receipts WHERE owner=? ORDER BY completed_at DESC, rowid DESC LIMIT 1").bind(PICKS_OWNER).all(),
     ]);
     [picks, checks, revisions, transcripts, receipts].forEach(checkedResult);
     return picksReply({

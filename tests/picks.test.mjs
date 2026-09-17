@@ -567,6 +567,23 @@ test('a scheduled run is verified only by a final receipt that accounts for ever
   assert.equal((await asAgent({action:'read'})).data.latestRun.outcome, 'blocked');
 });
 
+// Two receipts written inside the same millisecond share a completed_at. The
+// tiebreaker used to be the receipt's random UUID, so the desk intermittently
+// reported the older run as the latest one; CI caught it as a flaky failure on
+// roughly one run in fifteen. Insertion order decides it now.
+test('two receipts stamped the same millisecond resolve to the one written last', async () => {
+  const db = database();
+  const row = (id, outcome) => db.sqlite.prepare(
+    'INSERT INTO automation_run_receipts (id,owner,outcome,accounts_checked,accounts_blocked,picks_saved,checks_saved,note,started_at,completed_at) VALUES (?,?,?,?,?,?,?,?,?,?)'
+  ).run(id, 'dashboard-owner', outcome, 0, 0, 0, 0, '', '2026-09-15T15:00:00Z', '2026-09-15T15:25:17.075Z');
+  // Ids chosen so that ordering by id would return the wrong row.
+  row('zzzz-written-first', 'no_work');
+  row('aaaa-written-second', 'blocked');
+  const desk = (await api(db, {action: 'read', agentToken: AGENT}, {env: {PICKS_AGENT_TOKEN: AGENT}, agent: true})).data;
+  assert.equal(desk.latestRun.outcome, 'blocked');
+  assert.equal(desk.latestRun.id, 'aaaa-written-second');
+});
+
 test('a wrong, short, or unset automation secret grants nothing', async () => {
   const db = database();
   for (const [env, token] of [

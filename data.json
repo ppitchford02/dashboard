@@ -83,15 +83,6 @@
       "source_id": "4875802:quiz:728828"
     },
     {
-      "title": "Citators Problem Set",
-      "due": "2026-09-16T23:59",
-      "course": "Lawyering Analysis and Research",
-      "kind": "deadline",
-      "note": "dropbox",
-      "source": "law-plan",
-      "source_id": "4875802:dropbox:765440"
-    },
-    {
       "title": "Midterm Exam- Requires Respondus LockDown Browser",
       "due": "2026-10-04T23:59",
       "course": "Civil Procedure - Federal Jurisdiction",
@@ -313,7 +304,7 @@
   "last_runs": [
     {
       "name": "Law School OS sweep",
-      "at": "2026-09-16T12:01:46-04:00",
+      "at": "2026-09-17T12:00:56-04:00",
       "meaning": "Last successful Brightspace capture, with date and timezone; not a preparation or delivery completion."
     },
     {
@@ -394,9 +385,9 @@
     ]
   },
   "law_school_status": {
-    "last_successful_capture": "2026-09-16T12:01:46-04:00",
+    "last_successful_capture": "2026-09-17T12:00:56-04:00",
     "deadline_source": "law plan",
-    "deadline_count": 28,
+    "deadline_count": 27,
     "schedule_timezone": "America/New_York",
     "schedule": [
       "09:00",

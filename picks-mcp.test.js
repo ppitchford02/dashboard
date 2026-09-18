@@ -9,7 +9,18 @@ child.stdout.on('data', chunk => {
   if (lines.length !== 2) return;
   const responses = lines.map(JSON.parse);
   assert.equal(responses[0].result.serverInfo.name, 'sports-picks-local');
-  assert.deepEqual(responses[1].result.tools.map(tool=>tool.name), ['sports_picks_read','sports_picks_capture','sports_picks_transcribe_video','sports_picks_source_check','sports_picks_run_receipt']);
+  assert.deepEqual(
+    responses[1].result.tools.map(tool => tool.name),
+    [
+      'sports_picks_freshness',
+      'sports_picks_read',
+      'sports_picks_capture',
+      'sports_picks_transcribe_video',
+      'sports_picks_ocr_frames',
+      'sports_picks_source_check',
+      'sports_picks_run_receipt',
+    ],
+  );
   child.kill();
 });
 child.stdin.write(JSON.stringify({jsonrpc:'2.0',id:1,method:'initialize',params:{}})+'\n');

@@ -269,9 +269,12 @@ and names the missing dependency rather than downloading anything.
 The scheduled pass calls `sports_picks_freshness` first, before it reads,
 transcribes, classifies or captures anything. It hands the gate the source
 identifiers, exact post links, posted timestamps and content hashes it can see
-without interpreting them. The gate compares those against what the last
-successful aggregate receipt already covered, in `picks-freshness.js`, which
-calls no model, opens no network connection and checks no source.
+without interpreting them. Stable identity is the creator, account and
+canonical post URL; changing listing timestamps, tracking parameters or visible
+metadata hashes cannot make a saved post new again. The local bridge compares
+that identity against both the receipt-backed local index and the records
+already saved on the private desk. `picks-freshness.js` remains a pure local
+comparison: it calls no model and checks no creator source.
 
 When nothing is new the gate writes the required aggregate receipt itself with
 `outcome: "no_work"` and zero picks, mirrors it to `agent-health/`, and returns

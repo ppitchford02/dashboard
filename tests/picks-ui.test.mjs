@@ -627,3 +627,22 @@ test('a rejected automation token leaves the desk locked and keeps nothing', asy
   await assert.rejects(ui.tool('dashboard_picks_automation_token').execute({ token: '   ' }), /No automation token/);
   assert.equal(ui.get('picks-content').hidden, true, 'the desk stays locked');
 });
+
+test('run summary renders saved selections even with a legacy technical receipt and keeps diagnostics collapsed', async () => {
+  const parlay='4-leg parlay: A 30+ yards; B touchdown; C 3+ catches; D 40+ yards';
+  const current=pick({selection:parlay,odds:null,kind:'firm'});
+  const lean=pick({id:'lean',sourceId:'nick',selection:'Player E home run',kind:'lean'});
+  const old=pick({id:'old',selection:'OLD selection',createdAt:'2026-09-10T12:00:00Z'});
+  const ui=harness(async()=>({...desk([current,lean,old]),latestRun:{outcome:'complete',startedAt:'2026-09-11T12:00:00Z',completedAt:'2026-09-11T12:10:00Z',accountsChecked:11,accountsBlocked:0,picksSaved:2,note:'GATE STILL BROKEN debug hash=secret-example'}}));
+  await ui.get('picks-unlock').fire('click');
+  const host=ui.get('picks-run-status');
+  const primary=host.children.filter(n=>n.tagName!=='DETAILS').map(n=>n.textContent).join(' ');
+  assert.ok(primary.includes(parlay));
+  assert.ok(primary.includes('[lean]'));
+  assert.ok(primary.includes('2 picks saved'));
+  assert.equal(primary.includes('OLD selection'),false);
+  assert.equal(primary.includes('GATE STILL BROKEN'),false);
+  const detail=host.children.find(n=>n.tagName==='DETAILS');
+  assert.equal(detail.open,false);
+  assert.match(detail.textContent,/GATE STILL BROKEN/);
+});

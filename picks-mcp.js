@@ -7,6 +7,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const freshness = require('./picks-freshness.js');
+const { formatRunReport, boundedReceiptNote } = require('./picks-run-report.js');
+const { evidenceLadderInstruction } = require('./picks-evidence-ladder.js');
 
 const WORKER_URL = process.env.PICKS_WORKER_URL || 'https://pitchford-os-ask.ppitchford02.workers.dev/picks';
 const TOKEN_FILE = process.env.PICKS_TOKEN_FILE || path.join(process.env.HOME || '', 'dashboard', 'picks-agent-token.txt');
@@ -15,9 +17,10 @@ const tools = [
   { name: 'sports_picks_freshness', description: 'Run FIRST, before reading or interpreting anything. Give the source identifiers, exact post links, posted timestamps and content hashes you can see without interpreting them. Returns only the material no previous successful receipt already covered. When it returns stop:true it has already written the run receipt and the pass is over: do not read, transcribe, classify or capture anything.', inputSchema: { type:'object', properties:{ startedAt:{type:'string'}, accountsChecked:{type:'integer',minimum:0}, accountsBlocked:{type:'integer',minimum:0}, checksSaved:{type:'integer',minimum:0}, note:{type:'string'}, candidates:{type:'array',items:{type:'object',properties:{sourceId:{type:'string'},accountId:{type:'string'},sourceUrl:{type:'string'},postedAt:{type:'string'},contentHash:{type:'string'}},required:['sourceId','accountId','sourceUrl'],additionalProperties:true}} }, required:['startedAt','candidates'], additionalProperties:false } },
   { name: 'sports_picks_read', description: 'Read the private Sports Picks desk and its configured creator roster. The local automation token is read privately from disk.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'sports_picks_capture', description: 'Save one new source pick to the private desk. The Worker derives firm, Lean, or review from originalText. Never invent unknown fields.', inputSchema: { type: 'object', properties: { sourceId:{type:'string'}, accountId:{type:'string'}, sport:{type:'string',enum:['NFL','MLB']}, market:{type:'string'}, selection:{type:'string'}, event:{type:'string'}, eventDate:{type:'string'}, odds:{type:['integer','null']}, postedAt:{type:'string'}, sourceUrl:{type:'string'}, originalText:{type:'string'}, capturedBeforeStart:{type:'boolean'}, checkedUrl:{type:'string'}, checkedAt:{type:'string'} }, required:['sourceId','accountId','sport','market','selection','event','eventDate','sourceUrl','originalText','capturedBeforeStart','checkedUrl','checkedAt'], additionalProperties:false } },
-  { name: 'sports_picks_transcribe_video', description: 'Transcribe a creator video locally from its exact post URL, save the private audio transcript, and return its transcript id and spoken words. Use only for the creator’s own video; never captions or comments.', inputSchema: { type:'object', properties:{sourceId:{type:'string'},accountId:{type:'string'},sourceUrl:{type:'string'}}, required:['sourceId','accountId','sourceUrl'], additionalProperties:false } },
+  { name: 'sports_picks_transcribe_video', description: 'Transcribe a creator video locally from its exact post URL, save the private audio transcript, and return its transcript id and spoken words. Use only for the creator’s own video; never captions or comments. Second evidence-ladder step after caption/post text; try OCR next when a visible graphic may hold names or odds.', inputSchema: { type:'object', properties:{sourceId:{type:'string'},accountId:{type:'string'},sourceUrl:{type:'string'}}, required:['sourceId','accountId','sourceUrl'], additionalProperties:false } },
+  { name: 'sports_picks_ocr_frames', description: 'Run local OCR on frame image paths already extracted from a creator post. Third step in the evidence ladder after caption/post text and local transcript. Comments are never pick evidence. Returns extracted text only; unknown fields stay null.', inputSchema: { type:'object', properties:{ sourceId:{type:'string'}, accountId:{type:'string'}, sourceUrl:{type:'string'}, framePaths:{type:'array',items:{type:'string'},minItems:1} }, required:['sourceId','accountId','sourceUrl','framePaths'], additionalProperties:false } },
   { name: 'sports_picks_source_check', description: 'Record one source check after actually checking that creator. Do not use this to create a pick.', inputSchema: { type:'object', properties:{sourceId:{type:'string'},status:{type:'string',enum:['Checked','No new posts','Sign-in needed','Access blocked','Needs review']},note:{type:'string'}}, required:['sourceId','status','note'], additionalProperties:false } },
-  { name: 'sports_picks_run_receipt', description: 'Write the single final receipt for this scheduled Sports Picks pass. Call exactly once at the end, including if blocked or failed. A run without this receipt is not verified.', inputSchema: { type:'object', properties:{outcome:{type:'string',enum:['complete','no_work','blocked','failed']},accountsChecked:{type:'integer',minimum:0},accountsBlocked:{type:'integer',minimum:0},picksSaved:{type:'integer',minimum:0},checksSaved:{type:'integer',minimum:0},note:{type:'string'},startedAt:{type:'string'}}, required:['outcome','accountsChecked','accountsBlocked','picksSaved','checksSaved','note','startedAt'], additionalProperties:false } },
+  { name: 'sports_picks_run_receipt', description: 'Write the single final receipt for this scheduled Sports Picks pass. Call exactly once at the end, including if blocked or failed. A run without this receipt is not verified. Primary note is auto-built as a creator-grouped plain picks list from captures in this run; put hashes/freshness/debug only in technicalNote. Before Needs review, attempt caption → local transcript → OCR.', inputSchema: { type:'object', properties:{outcome:{type:'string',enum:['complete','no_work','blocked','failed']},accountsChecked:{type:'integer',minimum:0},accountsBlocked:{type:'integer',minimum:0},picksSaved:{type:'integer',minimum:0},checksSaved:{type:'integer',minimum:0},note:{type:'string'},technicalNote:{type:'string'},needsReview:{type:'array',items:{type:'object',properties:{creator:{type:'string'},pick:{type:'string'},missing:{type:'string'}},additionalProperties:false}},startedAt:{type:'string'}}, required:['outcome','accountsChecked','accountsBlocked','picksSaved','checksSaved','startedAt'], additionalProperties:false } }
 ];
 
 // Keep this intentionally aligned with the dashboard's capture classifier. The
@@ -64,9 +67,53 @@ function mirrorReceipt(receipt) {
 // Material the gate released this pass. It is marked as interpreted only when a
 // successful aggregate receipt is written, so an abandoned pass re-releases it.
 let pendingFresh = [];
+let pendingCaptures = [];
+
+function loadRoster() {
+  try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'picks-roster.json'), 'utf8')); }
+  catch { return []; }
+}
+
+function buildReceiptNote(args) {
+  const technical = String(args.technicalNote || args.note || '').trim();
+  const report = formatRunReport({
+    accountsChecked: Number.isInteger(args.accountsChecked) ? args.accountsChecked : 0,
+    picks: pendingCaptures,
+    needsReview: Array.isArray(args.needsReview) ? args.needsReview : [],
+    technical,
+    roster: loadRoster(),
+  });
+  return boundedReceiptNote(report);
+}
 
 function result(value) { return { content:[{type:'text',text:JSON.stringify(value)}] }; }
 function failure(error) { return { content:[{type:'text',text:JSON.stringify({error:error.message})}], isError:true }; }
+
+
+function ocrFrames(framePaths) {
+  const script = path.join(__dirname, 'bin', 'ocr-frames.swift');
+  return new Promise((resolve, reject) => {
+    const child = spawn('swift', [script, ...framePaths], { stdio:['ignore', 'pipe', 'pipe'] });
+    let output = '', errors = '';
+    child.stdout.on('data', chunk => { output += chunk; });
+    child.stderr.on('data', chunk => { errors += chunk; });
+    child.on('error', reject);
+    child.on('close', code => {
+      try {
+        const data = JSON.parse(output || '[]');
+        if (!code) {
+          return resolve({
+            ok: true,
+            frames: data,
+            text: data.map(row => row.text).filter(Boolean).join('\n'),
+            evidenceLadderInstruction: evidenceLadderInstruction(),
+          });
+        }
+        reject(new Error(errors.trim() || 'Local OCR failed.'));
+      } catch { reject(new Error(errors.trim() || 'Local OCR returned an invalid response.')); }
+    });
+  });
+}
 
 function transcribeVideo(url) {
   const script = path.join(__dirname, 'bin', 'transcribe-social-video.py');
@@ -98,6 +145,16 @@ async function handle(message) {
       else if (message.params?.name === 'sports_picks_capture') {
         const verification = {...classify(args.originalText), checkedUrl:args.checkedUrl, checkedAt:args.checkedAt};
         value = await request('save', {pick:args, verification});
+        pendingCaptures.push({
+          sourceId: args.sourceId,
+          accountId: args.accountId,
+          selection: args.selection,
+          odds: args.odds,
+          kind: verification.outcome,
+          event: args.event,
+          market: args.market,
+          sourceUrl: args.sourceUrl,
+        });
       }
       else if (message.params?.name === 'sports_picks_transcribe_video') {
         const local = await transcribeVideo(args.sourceUrl);
@@ -108,28 +165,42 @@ async function handle(message) {
         }});
       }
       else if (message.params?.name === 'sports_picks_source_check') value = await request('check', args);
+      else if (message.params?.name === 'sports_picks_ocr_frames') {
+        const local = await ocrFrames(args.framePaths);
+        value = { sourceId:args.sourceId, accountId:args.accountId, sourceUrl:args.sourceUrl, ...local };
+      }
       else if (message.params?.name === 'sports_picks_run_receipt') {
-        value = await request('receipt', {receipt:args});
+        const receipt = { ...args, note: buildReceiptNote(args) };
+        delete receipt.technicalNote;
+        delete receipt.needsReview;
+        value = await request('receipt', {receipt});
         mirrorReceipt(value.receipt);
         if (pendingFresh.length) { freshness.commit(__dirname, pendingFresh, value.receipt); pendingFresh = []; }
+        pendingCaptures = [];
       }
       else if (message.params?.name === 'sports_picks_freshness') {
-        // No network, no source check, no model: a comparison against the last
-        // successful receipt's coverage and nothing else.
-        const decision = freshness.evaluate(__dirname, args.candidates);
+        // Read the private desk locally through the restricted token so the gate
+        // can bootstrap from records saved before the local coverage index existed.
+        // No creator source is opened and no model interprets this data.
+        const desk = await request('read');
+        const decision = freshness.evaluate(__dirname, args.candidates, desk.picks);
         if (decision.stop) {
           const receipt = freshness.zeroReceipt(args);
           const written = await request('receipt', {receipt});
           mirrorReceipt(written.receipt);
+          if (decision.coverage.length) freshness.commit(__dirname, decision.coverage, written.receipt);
           pendingFresh = [];
+          pendingCaptures = [];
           value = {stop:true, counts:decision.counts, lastReceiptCompletedAt:decision.lastReceiptCompletedAt,
                    receipt:written.receipt,
                    instruction:'Nothing is new since the last successful receipt. The receipt is written and this pass is complete. Do not read, transcribe, classify or capture anything.'};
         } else {
-          pendingFresh = decision.fresh;
+          // Only explicit successful receipts advance coverage. A timestamp
+          // alone does not prove an older post was inspected.
+          pendingFresh = decision.coverage;
           value = {stop:false, counts:decision.counts, lastReceiptCompletedAt:decision.lastReceiptCompletedAt,
                    fresh:decision.fresh.map(f => f.candidate), skipped:decision.skipped,
-                   instruction:'Interpret only the material in fresh. Everything else was covered by an earlier successful receipt.'};
+                   instruction:'Interpret only the material in fresh. Everything else was covered by an earlier successful receipt. ' + evidenceLadderInstruction()};
         }
       }
       else throw new Error('Unknown Sports Picks tool.');

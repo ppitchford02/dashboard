@@ -74,24 +74,6 @@
       "source_id": "4875802:quiz:728843"
     },
     {
-      "title": "State Statutes Quiz",
-      "due": "2026-09-17T18:30",
-      "course": "Lawyering Analysis and Research",
-      "kind": "deadline",
-      "note": "quiz",
-      "source": "law-plan",
-      "source_id": "4875802:quiz:728828"
-    },
-    {
-      "title": "Midterm Exam- Requires Respondus LockDown Browser",
-      "due": "2026-10-04T23:59",
-      "course": "Civil Procedure - Federal Jurisdiction",
-      "kind": "deadline",
-      "note": "quiz",
-      "source": "law-plan",
-      "source_id": "4863882:quiz:726910"
-    },
-    {
       "title": "Week Five Quiz",
       "due": "2026-09-20T23:59",
       "course": "Lawyering Analysis and Writing I",
@@ -101,13 +83,22 @@
       "source_id": "4875804:quiz:747370"
     },
     {
-      "title": "In-Class Timed Research Assessment (Class 14)",
-      "due": "2026-10-06T23:59",
+      "title": "Pre-Class Legal Analysis Assignment (Contract Formation)",
+      "due": "2026-09-22T18:30",
       "course": "Lawyering Analysis and Research",
       "kind": "deadline",
-      "note": "exam",
+      "note": "dropbox",
       "source": "law-plan",
-      "source_id": "exam:lar:2026-10-06"
+      "source_id": "4875802:dropbox:765445"
+    },
+    {
+      "title": "Research Planning Quiz",
+      "due": "2026-09-22T18:30",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "quiz",
+      "source": "law-plan",
+      "source_id": "4875802:quiz:728827"
     },
     {
       "title": "Question Presented and Brief Answer",
@@ -128,13 +119,31 @@
       "source_id": "4875804:dropbox:787387"
     },
     {
-      "title": "Pre-Class Legal Analysis Assignment (Contract Formation)",
-      "due": "2026-09-22T18:30",
+      "title": "State Statutes Quiz",
+      "due": "2026-09-17T18:30",
       "course": "Lawyering Analysis and Research",
       "kind": "deadline",
-      "note": "dropbox",
+      "note": "quiz",
       "source": "law-plan",
-      "source_id": "4875802:dropbox:765445"
+      "source_id": "4875802:quiz:728828"
+    },
+    {
+      "title": "Midterm Exam- Requires Respondus LockDown Browser",
+      "due": "2026-10-04T23:59",
+      "course": "Civil Procedure - Federal Jurisdiction",
+      "kind": "deadline",
+      "note": "quiz",
+      "source": "law-plan",
+      "source_id": "4863882:quiz:726910"
+    },
+    {
+      "title": "In-Class Timed Research Assessment (Class 14)",
+      "due": "2026-10-06T23:59",
+      "course": "Lawyering Analysis and Research",
+      "kind": "deadline",
+      "note": "exam",
+      "source": "law-plan",
+      "source_id": "exam:lar:2026-10-06"
     },
     {
       "title": "Pre-Class Legal Analysis Assignment (Waiver and Removal)",
@@ -155,13 +164,13 @@
       "source_id": "4875802:dropbox:765442"
     },
     {
-      "title": "Research Planning Quiz",
-      "due": "2026-09-22T18:30",
+      "title": "Case File Practice Problem Set (Class 11)",
+      "due": "2026-09-25T23:59",
       "course": "Lawyering Analysis and Research",
       "kind": "deadline",
-      "note": "quiz",
+      "note": "dropbox",
       "source": "law-plan",
-      "source_id": "4875802:quiz:728827"
+      "source_id": "4875802:dropbox:765444"
     },
     {
       "title": "Pre-Class Hierarchy Review",
@@ -198,15 +207,6 @@
       "note": "dropbox",
       "source": "law-plan",
       "source_id": "4875802:dropbox:765447"
-    },
-    {
-      "title": "Case File Practice Problem Set (Class 11)",
-      "due": "2026-09-25T23:59",
-      "course": "Lawyering Analysis and Research",
-      "kind": "deadline",
-      "note": "dropbox",
-      "source": "law-plan",
-      "source_id": "4875802:dropbox:765444"
     },
     {
       "title": "Case File Practice Problem Set (Class 12)",

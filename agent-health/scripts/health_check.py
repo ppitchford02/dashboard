@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Deterministic local health report for Preston's agent systems."""
 from __future__ import annotations
-import argparse, json, os, re, subprocess, tempfile, urllib.error, urllib.request
+import argparse, hashlib, json, os, re, subprocess, tempfile, urllib.error, urllib.request
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -71,53 +71,103 @@ def latest(path: Path, pattern: str) -> Path | None:
     entries = list(path.glob(pattern)) if path.exists() else []
     return max(entries, key=lambda item: item.stat().st_mtime) if entries else None
 
+def read_object(path: Path) -> dict:
+    value = json.loads(path.read_text())
+    if not isinstance(value, dict):
+        raise ValueError('Expected an object')
+    return value
+
+
+def age_of(value) -> float:
+    stamp = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    if stamp.tzinfo is None:
+        raise ValueError('Timestamp must include timezone')
+    age = (datetime.now(timezone.utc) - stamp).total_seconds() / 3600
+    if age < -0.1:
+        raise ValueError('Timestamp is in the future')
+    return age
+
+
 def sports() -> Finding:
-    if HEALTH is None:
-        return Finding('Sports Picks', 'yellow', 'Dashboard agent-health folder is unavailable in this run.', 'Treat Sports Picks as unverified until its receipt folder is mounted.')
-    mirror = HEALTH / 'sports-picks.json'
-    if not mirror.exists():
-        return Finding('Sports Picks', 'yellow', 'No local final receipt exists yet.', 'Wait for one scheduled pass; do not call it successful until it writes a receipt.')
-    try: data = json.loads(mirror.read_text())
-    except Exception: return Finding('Sports Picks', 'red', f'Unreadable receipt: {mirror}.', 'Repair the local Sports Picks receipt mirror before another run.')
-    outcome = data.get('outcome', 'unknown')
-    if outcome in {'complete','no_work'}:
-        return Finding('Sports Picks', 'green', f"{outcome}: {data.get('accountsChecked',0)} accounts checked; {data.get('picksSaved',0)} picks saved.", 'None.')
-    return Finding('Sports Picks', 'red', f"{outcome}: {data.get('note','No reason recorded.')}", 'Read the run receipt and repair only the named blocker.')
+    if HEALTH is None or not (HEALTH / 'sports-picks.json').exists():
+        return Finding('Sports Picks', 'yellow', 'No local final receipt available.', 'Verify the latest expected run; do not start a duplicate pass.')
+    try:
+        data = read_object(HEALTH / 'sports-picks.json')
+        outcome = data.get('outcome', 'unknown')
+        counts = [data.get(k) for k in ('accountsChecked', 'accountsBlocked', 'picksSaved')]
+        if any(type(n) is not int or n < 0 for n in counts):
+            raise ValueError('Missing or invalid coverage counts')
+        checked, blocked, saved = counts
+        age = age_of(data.get('completedAt'))
+    except (ValueError, OSError, TypeError) as exc:
+        return Finding('Sports Picks', 'yellow', f'Unverified receipt: {exc}', 'Repair or retrieve the exact run receipt; do not infer successful capture.')
+    evidence = f"{outcome}: {checked} checked, {blocked} blocked, {saved} saved; completed {data['completedAt']}"
+    if outcome in {'failed', 'blocked', 'abandoned'}:
+        return Finding('Sports Picks', 'red', evidence, 'Recover only the named blocked/failed items, preserving saved picks.')
+    if outcome not in {'complete', 'no_work'} or blocked or (outcome == 'complete' and checked == 0) or (outcome == 'no_work' and saved):
+        return Finding('Sports Picks', 'yellow', evidence + '; coverage/outcome is incomplete or inconsistent.', 'Reconcile the receipt against item-level readback before declaring completion.')
+    if not data.get('id') and not data.get('runId'):
+        return Finding('Sports Picks', 'yellow', evidence + '; no run identifier.', 'Retrieve the identified final receipt.')
+    if age > float(os.environ.get('AGENT_HEALTH_SPORTS_MAX_AGE_HOURS', '24')):
+        return Finding('Sports Picks', 'yellow', evidence + '; stale for the daily workflow.', 'Check the latest expected run; do not reuse old success as current proof.')
+    return Finding('Sports Picks', 'green', evidence + '; run receipt only, not independent pick-accuracy verification.', 'None.')
+
 
 def hours_since(path: Path) -> float:
-    age = datetime.now(timezone.utc) - datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
-    return age.total_seconds() / 3600
+    return (datetime.now(timezone.utc) - datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)).total_seconds()/3600
+
 
 def law() -> Finding:
-    """Delivery writes state/delivery-receipt.json; the next morning run acknowledges
-    it and renames it to .acked, recording the Drive file ids in delivery-ledger.json.
-    The acknowledged receipt plus a current ledger IS the success state, so the absence
-    of delivery-receipt.json is not evidence that delivery failed."""
     if LAW is None:
-        return Finding('Law School', 'yellow', 'Law School folder is unavailable in this run.', 'Treat delivery as unverified until its receipt folder is mounted.')
+        return Finding('Law School', 'yellow', 'Law School folder unavailable.', 'Restore the named mount.')
     state = LAW / 'state'
-    pending = state / 'delivery-receipt.json'
-    acked = state / 'delivery-receipt.json.acked'
-    ledger = state / 'delivery-ledger.json'
-    STALE_HOURS = 36.0
-    if pending.exists():
-        if hours_since(pending) <= STALE_HOURS:
-            return Finding('Law School', 'green', f'{iso_age(pending)} (delivered; acknowledgement due on the next morning run)', 'None.')
-        return Finding('Law School', 'yellow', f'{iso_age(pending)} (delivered but not acknowledged for over {int(STALE_HOURS)}h)', 'Check that the morning run is still acknowledging receipts; the delivery itself completed.')
-    if acked.exists() and ledger.exists():
-        if hours_since(ledger) <= STALE_HOURS:
-            return Finding('Law School', 'green', f'{iso_age(acked)}; {iso_age(ledger)}', 'None.')
-        return Finding('Law School', 'yellow', f'Last acknowledged delivery is over {int(STALE_HOURS)}h old: {iso_age(ledger)}', 'Check the delivery task\u2019s next run; the previous delivery completed and was acknowledged.')
-    if acked.exists():
-        return Finding('Law School', 'yellow', f'{iso_age(acked)} but no delivery ledger is present.', 'Check the delivery task\u2019s next run; do not claim delivery completed without its ledger.')
-    return Finding('Law School', 'yellow', 'No local Drive-delivery receipt found, acknowledged or pending.', 'Check the delivery task\u2019s next run; do not claim delivery completed without its receipt.')
+    try:
+        ops = read_object(state/'operations.json')
+        stages = ops.get('stages', {})
+        failures = [k for k in ('doctor','diff','extract','index','reports','backup') if stages.get(k,{}).get('status') == 'failed']
+        if failures:
+            return Finding('Law School', 'red', 'Failed stages: '+', '.join(failures)+f"; last successful capture {ops.get('last_successful_capture','unknown')}", 'Inspect the failed stage; a delivered report does not establish fresh coursework.')
+        capture_age = age_of(ops.get('last_successful_capture'))
+        if capture_age > 36:
+            return Finding('Law School', 'yellow', f"Capture is stale: {ops.get('last_successful_capture')}", 'Verify collection before making current coursework claims.')
+        pending, acked = state/'delivery-receipt.json', state/'delivery-receipt.json.acked'
+        path = pending if pending.exists() else acked
+        receipt = read_object(path)
+        box = read_object(state/'delivery-outbox.json')
+        files, cloud = receipt.get('files'), receipt.get('cloud_files')
+        if receipt.get('verified') is not True or not files or files != box.get('files') or not isinstance(cloud,list):
+            raise ValueError('Delivery proof does not match the current outbox')
+        expected = {(f['name'],f['sha256']) for f in files}
+        actual = {(f.get('name'),f.get('sha256')) for f in cloud}
+        if actual != expected or len(cloud)!=len(files) or len({f.get('id') for f in cloud})!=len(files) or any(not f.get('id') for f in cloud):
+            raise ValueError('Missing or mismatched cloud IDs/hashes')
+        for f in files:
+            if hashlib.sha256(Path(f['source']).read_bytes()).hexdigest()!=f['sha256']:
+                raise ValueError('Delivered source bytes have changed')
+        ledger = state/'delivery-ledger.json'
+        if hours_since(path)>36 or (path==acked and (not ledger.exists() or hours_since(ledger)>36)):
+            raise ValueError('Delivery/acknowledgement proof is stale or missing')
+        return Finding('Law School','green',f"Capture {ops['last_successful_capture']}; matching verified delivery ({'acknowledgement pending' if path==pending else 'acknowledged'}).",'None.')
+    except (ValueError, OSError, KeyError, TypeError, AttributeError) as exc:
+        return Finding('Law School','yellow',f'Unverified collection/delivery evidence: {exc}','Read current stage and exact receipt; do not infer completion from file timestamps.')
+
 
 def collections() -> Finding:
     if COLLECTIONS is None:
-        return Finding('Collections', 'yellow', 'Collections folder is unavailable in this run.', 'Treat Collections as unverified; do not start a paid case.')
-    runs = latest(COLLECTIONS / 'runs', '*.json')
-    if runs: return Finding('Collections', 'green', iso_age(runs), 'None.')
-    return Finding('Collections', 'yellow', 'No local Collections run-state file found.', 'Run only when Preston supplies a case; preserve the paid-run checkpoint and resume guard.')
+        return Finding('Collections','yellow','Collections folder unavailable.','Restore the named mount; do not start a paid matter.')
+    path = latest(COLLECTIONS/'runs','*.json')
+    if path is None:
+        return Finding('Collections','yellow','Manual workflow idle; no run evidence.','No automatic run required. Verify only when a matter is assigned.')
+    try:
+        data = read_object(path)
+    except (ValueError,OSError) as exc:
+        return Finding('Collections','yellow',f'Unreadable run state: {exc}','Inspect that state without restarting paid research.')
+    status = str(data.get('status','unknown')).upper()
+    if status in {'FAILED','ERROR','ABANDONED','INTERRUPTED'}:
+        return Finding('Collections','red',f'Latest saved run status {status}; {iso_age(path)}','Use checkpoint/resume for the named failure only when authorized.')
+    if status != 'DONE' or not data.get('packet') or not data.get('receipts'):
+        return Finding('Collections','yellow',f'Manual workflow: {status}; completion not proven; {iso_age(path)}','Review pending handoffs on the next assigned matter; do not launch a scheduled catch-up.')
+    return Finding('Collections','green',f'Last manual run DONE with packet/receipts; {iso_age(path)}. Not a current live-source audit.','None; manual workflow has no automatic freshness deadline.')
 
 # The health check runs in the device shell, whose egress proxy allow-lists by host.
 # ppitchford02.github.io is not allow-listed, so fetching the published receipt there
@@ -176,6 +226,13 @@ def dashboard() -> Finding:
     slug = repo_slug(DASH)
     if slug is None:
         return Finding('Dashboard', 'yellow', 'Could not determine the GitHub repository from the origin remote.', 'Treat deployment state as unverified until the origin remote resolves.')
+    try:
+        remote = get_json(f'{API}/repos/{slug}/git/ref/heads/main')
+        expected = str(remote.get('object', {}).get('sha', ''))
+        if not re.fullmatch(r'[0-9a-f]{40}', expected):
+            raise ValueError('Missing remote main revision')
+    except Exception as error:
+        return Finding('Dashboard', 'yellow', f'Current main revision unverified: {error}', 'Verify remote main before comparing deployment.')
     url = os.environ.get('AGENT_HEALTH_DEPLOYMENTS_URL', f'{API}/repos/{slug}/deployments?environment=github-pages&per_page=1')
     try:
         deployments = get_json(url)
@@ -200,12 +257,14 @@ def dashboard() -> Finding:
             state = 'unknown'
     if published != expected:
         return Finding('Dashboard', 'yellow', f'Pages last deployed {published[:7] or "?"} but origin/main is {expected[:7]} (deployed {created}).', 'A deploy may still be in flight; re-check before treating the public page as current.')
-    if state not in {'success', 'unknown'}:
-        return Finding('Dashboard', 'yellow', f'Pages deployment for {published[:7]} reports state "{state}" (deployed {created}).', 'Check the Actions run for that commit before treating the public page as current.')
+    if state != 'success':
+        return Finding('Dashboard', 'red' if state in {'failure','error'} else 'yellow', f'Pages deployment for {published[:7]} reports state "{state}" (deployed {created}).', 'Check the Actions run for that commit before treating the public page as current.')
     receipt = published_commit()
+    if receipt and receipt != expected:
+        return Finding('Dashboard', 'yellow', f'Published receipt {receipt[:7]} disagrees with successful deployment {expected[:7]}.', 'Reconcile served artifact and deployment before declaring current.')
     extra = f'; published receipt agrees ({receipt[:7]})' if receipt == expected else ''
     shown = state if state != 'unknown' else 'state unread'
-    return Finding('Dashboard', 'green', f'Pages deployed {published[:7]} (origin/main), {shown}, at {created}{extra}.', 'None.')
+    return Finding('Dashboard', 'green', f'Pages deployed {published[:7]} (current remote main), {shown}, at {created}{extra}.', 'None.')
 
 def write_outbox(findings: list[Finding]) -> None:
     if OUTBOX is None:
@@ -221,9 +280,10 @@ def write_outbox(findings: list[Finding]) -> None:
     OUTBOX.parent.mkdir(parents=True, exist_ok=True)
     OUTBOX.write_text('\n'.join(text))
 
-def run() -> dict:
+def run(write: bool = True) -> dict:
     findings = [sports(), law(), collections(), dashboard()]
-    write_outbox(findings)
+    if write:
+        write_outbox(findings)
     return {'findings':[asdict(finding) for finding in findings], 'claude_outbox': str(OUTBOX) if OUTBOX and OUTBOX.exists() else None}
 
 def self_test() -> None:
@@ -235,6 +295,7 @@ def self_test() -> None:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--self-test', action='store_true')
+    parser.add_argument('--read-only', action='store_true', help='Never create or remove handoffs')
     args = parser.parse_args()
     if args.self_test: self_test()
-    else: print(json.dumps(run(), indent=2))
+    else: print(json.dumps(run(write=not args.read_only), indent=2))

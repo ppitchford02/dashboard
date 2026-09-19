@@ -6,7 +6,7 @@ When Preston asks for an agent-health audit, read `outbox/claude.md` first if it
 
 Act only on the named evidence and next action. Do not run a broad audit, source check, browser session, deployment, schedule change, or unrelated repair just because an outbox exists. Stop when the stated condition is confirmed or record the blocker.
 
-If the outbox is absent, there is no actionable Codex health failure. Do not infer a failure or wake systems to look for one.
+If the outbox is absent, Codex has supplied no action handoff; this is not proof that every system is healthy. On an authorized health check, report yellow and red findings from the current checker output. Do not infer a failure or wake systems merely because the outbox is missing.
 
 Before reporting a blocker, use a bounded recovery ladder: inspect all already-open browser tabs and profiles by exact domain, account, sign-in state, and title; try one other matching signed-in tab and one reload; refresh the connected tool list once; then check only the named project folders and known receipt paths. Never enter credentials, tokens, or passphrases, bypass a login or permission wall, scan the whole home folder, or invent a path.
 

@@ -77,3 +77,6 @@ After substantive work, update only the matching Obsidian handoff with current s
 
 Lead with the outcome, proof, and real blocker. Distinguish local, committed, pushed, deployed, scheduled, and verified. Never call work delivered, live, or connected without current proof.
 
+
+## September 19 verification correction
+Use the canonical dashboard health script; report yellow and red. Tie diagnoses to exact task/run/host, not a manual attempt in a different session. Green is receipt proof only; pending delivery and missing evidence remain explicit. No new run or changed schedule is implied by this repair.

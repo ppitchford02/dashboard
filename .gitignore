@@ -31,3 +31,6 @@ agent-health/sports-picks-seen.json
 # Private resumable per-post resolution journal.
 agent-health/sports-picks-active-run.json
 agent-health/sports-picks-report.json
+
+# Private source recovery instructions, never publish.
+agent-health/sports-picks-run-*-handoff.md

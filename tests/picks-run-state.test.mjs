@@ -59,3 +59,21 @@ test('spoken go-with and HR-calls headings are recommendations, not automatic re
   assert.equal(classify('Comments: my pick is Player A').outcome,'unclear');
   assert.equal(classify('MLB HITS — Player A, Player B').outcome,'unclear');
 });
+test('inventory is checkpointed before gate and resumes across a reload without claiming coverage',()=>{
+ const r=root();state.checkpoint(r,{startedAt:at});
+ state.checkpoint(r,{startedAt:at,sourceId:A.sourceId,accountId:A.accountId,status:'checked',candidates:[A]});
+ const reload=state.read(r);assert.deepEqual(reload.inventory.a.candidates,[A]);
+ assert.equal(reload.released.length,0);assert.equal(gate.evaluate(r,[A]).fresh.length,1);
+ state.start(r,at,gate.evaluate(r,[A]).fresh);
+ assert.deepEqual(state.read(r).inventory.a.candidates,[A]);
+ assert.throws(()=>state.checkpoint(r,{startedAt:at,sourceId:'wrong',accountId:'a',status:'checked',candidates:[A]}),/belong/);
+});
+
+test('new pass retains only unfinished posts from a closed partial run',()=>{
+ const r=root();state.start(r,at,gate.evaluate(r,[A,B]).fresh);
+ state.resolve(r,{...A,startedAt:at,status:'excluded',reason:'not a pick',attempts:['read post']});
+ state.write(r,{...state.read(r),closed:true});
+ const next=state.checkpoint(r,{startedAt:'2026-09-21T15:00:00Z'});
+ assert.deepEqual(state.summarize(next).pending.map(x=>x.candidate),[B]);
+ assert.equal(next.recoveryFrom,at);
+});

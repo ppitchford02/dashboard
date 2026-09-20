@@ -15,6 +15,7 @@ const WORKER_URL = process.env.PICKS_WORKER_URL || 'https://pitchford-os-ask.ppi
 const TOKEN_FILE = process.env.PICKS_TOKEN_FILE || path.join(process.env.HOME || '', 'dashboard', 'picks-agent-token.txt');
 
 const tools = [
+  {name:'sports_picks_checkpoint',description:'Call before browser work with startedAt, then immediately after EACH account inventory. Saves exact links locally before freshness; does not interpret or mark covered. Read activeRun.inventory to resume only unfinished accounts. Holds a bounded idle-sleep assertion on Mac during this pass.',inputSchema:{type:'object',properties:{startedAt:{type:'string'},sourceId:{type:'string'},accountId:{type:'string'},status:{type:'string',enum:['checked','blocked']},reason:{type:'string'},candidates:{type:'array',items:{type:'object',properties:{sourceId:{type:'string'},accountId:{type:'string'},sourceUrl:{type:'string'},postedAt:{type:'string'},contentHash:{type:'string'}},required:['sourceId','accountId','sourceUrl'],additionalProperties:true}}},required:['startedAt'],additionalProperties:false}},
   { name:'sports_picks_resolve_post', description:'Record the actual evidence result for ONE released post. Read the full graphic/legend, audio or related creator clarification before giving up. resolved means EVERY recommendation was saved or already exists; excluded needs observed reason (non-pick, settled event or outside NFL/MLB); unresolved stays pending. Never resolve from a listing caption or merely because one pick was saved.', inputSchema:{type:'object',properties:{startedAt:{type:'string'},sourceId:{type:'string'},accountId:{type:'string'},sourceUrl:{type:'string'},status:{type:'string',enum:['resolved','excluded','unresolved']},allSelectionsHandled:{type:'boolean'},reason:{type:'string'},attempts:{type:'array',items:{type:'string'},minItems:1}},required:['startedAt','sourceId','accountId','sourceUrl','status','reason','attempts'],additionalProperties:false}},
   { name: 'sports_picks_freshness', description: 'Run FIRST, before reading or interpreting anything. Give the source identifiers, exact post links, posted timestamps and content hashes you can see without interpreting them. Returns only the material no previous successful receipt already covered. When it returns stop:true it has already written the run receipt and the pass is over: do not read, transcribe, classify or capture anything.', inputSchema: { type:'object', properties:{ startedAt:{type:'string'}, accountsChecked:{type:'integer',minimum:0}, accountsBlocked:{type:'integer',minimum:0}, checksSaved:{type:'integer',minimum:0}, note:{type:'string'}, candidates:{type:'array',items:{type:'object',properties:{sourceId:{type:'string'},accountId:{type:'string'},sourceUrl:{type:'string'},postedAt:{type:'string'},contentHash:{type:'string'}},required:['sourceId','accountId','sourceUrl'],additionalProperties:true}} }, required:['startedAt','candidates'], additionalProperties:false } },
   { name: 'sports_picks_read', description: 'Read the private Sports Picks desk and its configured creator roster. The local automation token is read privately from disk.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
@@ -49,7 +50,7 @@ function token() {
 }
 
 async function request(action, payload = {}) {
-  const response = await fetch(WORKER_URL, { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({action, agentToken:token(), ...payload}) });
+  const response = await fetch(WORKER_URL, { method:'POST', headers:{'content-type':'application/json'}, signal:AbortSignal.timeout(20000), body:JSON.stringify({action, agentToken:token(), ...payload}) });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error || `Sports Picks request failed (${response.status}).`);
   return body;
@@ -82,12 +83,22 @@ function buildReceiptNote(args) {
     accountsChecked: Number.isInteger(args.accountsChecked) ? args.accountsChecked : 0,
     picks: pendingCaptures,
     needsReview: Array.isArray(args.needsReview) ? args.needsReview : [],
+    unfinishedPosts: args.unfinishedPosts || 0,
     technical,
     roster: loadRoster(),
   });
   return boundedReceiptNote(report);
 }
 
+let awake;
+function keepAwake() {
+  if (process.platform !== 'darwin' || awake) return;
+  awake = spawn('/usr/bin/caffeinate',['-i','-t','1800'],{stdio:'ignore'});
+  awake.on('error',()=>{awake=null;});
+  awake.on('exit',()=>{awake=null;});
+}
+function releaseAwake() { if (awake) {awake.kill();awake=null;} }
+process.once('exit',releaseAwake);
 function result(value) { return { content:[{type:'text',text:JSON.stringify(value)}] }; }
 function failure(error) { return { content:[{type:'text',text:JSON.stringify({error:error.message})}], isError:true }; }
 
@@ -97,6 +108,9 @@ function ocrFrames(framePaths) {
   return new Promise((resolve, reject) => {
     const child = spawn('swift', [script, ...framePaths], { stdio:['ignore', 'pipe', 'pipe'] });
     let output = '', errors = '';
+    const deadline = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('Local evidence tool timed out after 120 seconds; leave this post unresolved.')); },120000);
+    child.once('error',()=>clearTimeout(deadline));
+    child.once('close',()=>clearTimeout(deadline));
     child.stdout.on('data', chunk => { output += chunk; });
     child.stderr.on('data', chunk => { errors += chunk; });
     child.on('error', reject);
@@ -122,6 +136,9 @@ function transcribeVideo(url) {
   return new Promise((resolve, reject) => {
     const child = spawn(script, [url], { stdio:['ignore', 'pipe', 'pipe'] });
     let output = '', errors = '';
+    const deadline = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('Local evidence tool timed out after 120 seconds; leave this post unresolved.')); },120000);
+    child.once('error',()=>clearTimeout(deadline));
+    child.once('close',()=>clearTimeout(deadline));
     child.stdout.on('data', chunk => { output += chunk; });
     child.stderr.on('data', chunk => { errors += chunk; });
     child.on('error', reject);
@@ -136,7 +153,7 @@ function transcribeVideo(url) {
 }
 
 async function handle(message) {
-  if (message.method === 'initialize') return { jsonrpc:'2.0', id:message.id, result:{protocolVersion:'2024-11-05',capabilities:{tools:{}},serverInfo:{name:'sports-picks-local',version:'2.0.0'}} };
+  if (message.method === 'initialize') return { jsonrpc:'2.0', id:message.id, result:{protocolVersion:'2024-11-05',capabilities:{tools:{}},serverInfo:{name:'sports-picks-local',version:'2.1.0'}} };
   if (message.method === 'notifications/initialized') return null;
   if (message.method === 'tools/list') return { jsonrpc:'2.0', id:message.id, result:{tools} };
   if (message.method === 'tools/call') {
@@ -144,6 +161,7 @@ async function handle(message) {
       const args = message.params?.arguments || {};
       let value;
       if (message.params?.name === 'sports_picks_read') value = {...await request('read'), activeRun:runState.read(__dirname)};
+      else if (message.params?.name === 'sports_picks_checkpoint') { const state = runState.checkpoint(__dirname,args); keepAwake(); value = {startedAt:state.startedAt, checkpointSaved:true, accountsCheckpointed:Object.keys(state.inventory || {}).length, unfinishedPosts:runState.summarize(state).pending.length, recoveryFrom:state.recoveryFrom || null, instruction:state.recoveryFrom ? 'Recover the retained unfinished posts with freshness candidates:[] before collecting new inventory. Do not redo completed posts.' : 'Checkpoint each account immediately after inventory.', idleSleepProtection:!!awake}; }
       else if (message.params?.name === 'sports_picks_resolve_post') value = runState.resolve(__dirname,args);
       else if (message.params?.name === 'sports_picks_capture') {
         const verification = {...classify(args.originalText), checkedUrl:args.checkedUrl, checkedAt:args.checkedAt};
@@ -179,16 +197,17 @@ async function handle(message) {
         // Read back persisted records, including captures made before a bridge restart.
         pendingCaptures = runState.savedSince(desk, args.startedAt);
         const {completed, pending} = runState.summarize(state);
-        const unresolved = pending.map(item => ({creator:item.candidate.sourceId, pick:item.candidate.sourceUrl, missing:item.resolution.reason}));
         const actual = {...args, picksSaved:pendingCaptures.length,
-          needsReview:[...(args.needsReview || []), ...unresolved]};
+          needsReview:args.needsReview || [], unfinishedPosts:pending.length};
         if ((pending.length || args.accountsBlocked > 0 || actual.needsReview.length) && ['complete','no_work'].includes(actual.outcome)) actual.outcome = 'blocked';
         if (actual.outcome === 'no_work' && actual.picksSaved) actual.outcome = 'complete';
         const receipt = {...actual, note:buildReceiptNote(actual)};
         delete receipt.technicalNote;
         delete receipt.needsReview;
+        delete receipt.unfinishedPosts;
         value = await request('receipt', {receipt});
         mirrorReceipt(value.receipt);
+        releaseAwake();
         // Only explicit per-post results consume material, even in a partial run.
         if (actual.outcome !== 'failed' && completed.length) freshness.commit(__dirname, completed, {...value.receipt,outcome:'complete'});
         runState.write(__dirname,{...state,closed:true,receiptId:value.receipt.id});
@@ -201,7 +220,9 @@ async function handle(message) {
         // can bootstrap from records saved before the local coverage index existed.
         // No creator source is opened and no model interprets this data.
         const desk = await request('read');
-        const decision = freshness.evaluate(__dirname, args.candidates, desk.picks);
+        const checkpointed = runState.read(__dirname);
+        const inventory = checkpointed?.startedAt === args.startedAt ? Object.values(checkpointed.inventory || {}).flatMap(a => a.candidates) : [];
+        const decision = freshness.evaluate(__dirname, [...inventory,...(args.candidates || [])], desk.picks);
         const active = runState.start(__dirname, args.startedAt, decision.coverage);
         // A resumed run cannot hide unfinished posts with an empty inventory.
         if (runState.summarize(active).pending.length) decision.stop = false;
@@ -209,6 +230,7 @@ async function handle(message) {
           const receipt = freshness.zeroReceipt(args);
           const written = await request('receipt', {receipt});
           mirrorReceipt(written.receipt);
+          releaseAwake();
           runState.write(__dirname,{...active,closed:true,receiptId:written.receipt.id});
           if (decision.coverage.length) freshness.commit(__dirname, decision.coverage, written.receipt);
           pendingFresh = [];

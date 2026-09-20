@@ -21,10 +21,26 @@ function start(root, startedAt, released) {
   if (old && !old.closed && old.startedAt !== startedAt) throw Error('An unfinished run exists. Resume with startedAt '+old.startedAt+' before starting another.');
   const state = old && old.startedAt === startedAt ? old : {startedAt, released:[], resolutions:{}, closed:false};
   if (state.closed) throw Error('This run already has a receipt. Use a new startedAt.');
+  if (old?.closed && old.startedAt !== startedAt) {
+    state.released = summarize(old).pending;
+    state.recoveryFrom = old.startedAt;
+    state.resolutions = Object.fromEntries(state.released.filter(item => old.resolutions[item.fingerprint]).map(item => [item.fingerprint,old.resolutions[item.fingerprint]]));
+  }
   const items = new Map(state.released.map(item => [item.fingerprint, item]));
   for (const item of released) items.set(item.fingerprint, item);
   state.released = [...items.values()];
   return write(root, state);
+}
+function checkpoint(root, args) {
+  const state = start(root,args.startedAt,[]);
+  state.inventory = state.inventory || {};
+  if (args.accountId) {
+    if (!args.sourceId || !['checked','blocked'].includes(args.status)) throw Error('Account checkpoint needs sourceId and checked/blocked status.');
+    const candidates = args.candidates || [];
+    if (candidates.some(c => c.accountId !== args.accountId || c.sourceId !== args.sourceId || !c.sourceUrl)) throw Error('Checkpoint candidates must belong to this account.');
+    state.inventory[args.accountId] = {sourceId:args.sourceId,status:args.status,candidates,reason:args.reason || '',observedAt:new Date().toISOString()};
+  }
+  return write(root,state);
 }
 function resolve(root, args) {
   const state = read(root);
@@ -52,4 +68,4 @@ function savedSince(desk, startedAt) {
   if (!Number.isFinite(start)) throw Error('Invalid run start.');
   return (desk.picks || []).filter(p => Number.isFinite(Date.parse(p.createdAt)) && Date.parse(p.createdAt) >= start);
 }
-module.exports = {read,write,start,resolve,summarize,savedSince};
+module.exports = {read,write,start,checkpoint,resolve,summarize,savedSince};

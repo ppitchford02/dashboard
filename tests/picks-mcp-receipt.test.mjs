@@ -30,7 +30,7 @@ test('MCP receipt reads persisted counts and leaves unreviewed source pending ac
     delete require.cache[require.resolve(path.join(root,'picks-mcp.js'))];
     ({handle}=require(path.join(root,'picks-mcp.js')));
     await call('sports_picks_run_receipt',{startedAt:at,outcome:'complete',accountsChecked:11,accountsBlocked:0,picksSaved:99,checksSaved:0});
-    assert.equal(written.picksSaved,2);assert.equal(written.outcome,'blocked');assert.match(written.note,/2 picks saved/);
+    assert.equal(written.picksSaved,2);assert.equal(written.outcome,'blocked');assert.match(written.note,/2 picks saved/);assert.match(written.note,/1 unfinished posts/);assert.match(written.note,/0 need review/);
     const gate=require(path.join(root,'picks-freshness.js'));
     assert.deepEqual(gate.evaluate(root,[A,B],records).fresh.map(x=>x.candidate),[B]);
   } finally {global.fetch=prevFetch;if(prevToken===undefined)delete process.env.PICKS_TOKEN_FILE;else process.env.PICKS_TOKEN_FILE=prevToken;}

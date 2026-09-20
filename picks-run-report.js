@@ -49,7 +49,8 @@ function formatRunReport(input = {}) {
   const listedCount = [...groups.values()].reduce((n, lines) => n + lines.length, 0);
   const reviewRecords = picks.filter(p => p.status === 'review' || ['unclear','review'].includes(p.kind)).length;
   const reviewCount = needsReview.length;
-  const summary = `${accountsChecked} accounts checked · ${savedCount} picks saved · ${reviewCount} need review${reviewRecords ? ` · ${reviewRecords} saved records awaiting verification` : ''}`;
+  const unfinishedPosts = Number.isInteger(input.unfinishedPosts) ? input.unfinishedPosts : 0;
+  const summary = `${accountsChecked} accounts checked · ${savedCount} picks saved · ${reviewCount} need review${unfinishedPosts ? ` · ${unfinishedPosts} unfinished posts` : ''}${reviewRecords ? ` · ${reviewRecords} saved records awaiting verification` : ''}`;
   let primary = blocks.length ? `${blocks.join('\n\n')}\n\n${summary}` : summary;
 
   if (reviewCount > 0) {
@@ -64,7 +65,7 @@ function formatRunReport(input = {}) {
 
   const technical = String(input.technical || '').trim();
   const note = technical ? `${primary}\n\nTechnical details\n${technical}` : primary;
-  return { primary, technical, note, counts: { accountsChecked, picksSaved: savedCount, picksListed: listedCount, needsReview: reviewCount } };
+  return { primary, technical, note, counts: { accountsChecked, picksSaved: savedCount, picksListed: listedCount, needsReview: reviewCount, unfinishedPosts, reviewRecords } };
 }
 
 // Worker receipt notes have a 2,000-character limit. Never let a verbose
@@ -72,7 +73,7 @@ function formatRunReport(input = {}) {
 function boundedReceiptNote(report, limit = 2000) {
   if (report.note.length <= limit) return report.note;
   const primary = report.primary.length <= limit ? report.primary :
-    `${report.counts.accountsChecked} accounts checked · ${report.counts.picksSaved} picks saved · ${report.counts.needsReview} need review. Full selections are available in the private dashboard.`;
+    `${report.counts.accountsChecked} accounts checked · ${report.counts.picksSaved} picks saved · ${report.counts.needsReview} need review · ${report.counts.reviewRecords} saved records awaiting verification · ${report.counts.unfinishedPosts} unfinished posts. Full selections are available in the private dashboard.`;
   const separator = '\n\nTechnical details\n';
   const room = limit - primary.length - separator.length;
   return room > 20 && report.technical ? primary + separator + report.technical.slice(0, room - 1) + '…' : primary;

@@ -392,3 +392,11 @@ The local bridge now requires `sports_picks_resolve_post` for every post release
 Before unresolved: read the full creator graphic and legend, use local transcript/OCR when relevant, check one directly related creator clarification, and use an official schedule for matchup/date only. Unknown odds may remain null; never fabricate creator direction/line. Missing details must produce named pending work, not silently disappear.
 
 Receipt counts are read back from stored picks created since the run start, not model estimates or process memory. This assumes one capture run at a time; do not run concurrent manual captures during it. The report distinguishes all saved records from pending/lean selections and records still in review. Private reports/journals and backups remain ignored. Reload the local MCP after code updates; no Worker schema or secret change is required. Historical records are not automatically promoted or edited by this patch.
+
+### Disconnect recovery
+
+Call `sports_picks_checkpoint` before browsing and after each account inventory. Its private durable inventory survives a bridge/app restart and never marks posts covered; resume only unfinished accounts in that run. The bridge limits each Worker request to 20 seconds and each local evidence subprocess to 120 seconds. Checkpointing starts a 30-minute idle-sleep assertion on macOS and receipt completion releases it. This does not keep a closed laptop awake or prevent an explicit app quit/network outage.
+
+The scheduled prompt limits active work to 20 minutes and one reconnect attempt within 30 seconds. When MCP is unavailable but the mounted folder is accessible, `python3 bin/picks-emergency-receipt.py "exact blocker"` writes local blocked evidence and leaves the journal untouched. It does not claim a verified Worker receipt or invent saved counts. Reload Claude only when its active work has finished to load bridge changes.
+
+A new pass automatically carries unfinished posts from the previous closed partial run into its journal. The checkpoint response directs recovery via freshness with an empty new inventory; resolved/excluded posts are not carried. Receipts report unfinished posts separately from saved records awaiting verification. Recovery handoff files stay gitignored.

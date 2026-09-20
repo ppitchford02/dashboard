@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const freshness = require('./picks-freshness.js');
+const runState = require('./picks-run-state.js');
 const { formatRunReport, boundedReceiptNote } = require('./picks-run-report.js');
 const { evidenceLadderInstruction } = require('./picks-evidence-ladder.js');
 
@@ -14,6 +15,7 @@ const WORKER_URL = process.env.PICKS_WORKER_URL || 'https://pitchford-os-ask.ppi
 const TOKEN_FILE = process.env.PICKS_TOKEN_FILE || path.join(process.env.HOME || '', 'dashboard', 'picks-agent-token.txt');
 
 const tools = [
+  { name:'sports_picks_resolve_post', description:'Record the actual evidence result for ONE released post. Read the full graphic/legend, audio or related creator clarification before giving up. resolved means EVERY recommendation was saved or already exists; excluded needs observed reason (non-pick, settled event or outside NFL/MLB); unresolved stays pending. Never resolve from a listing caption or merely because one pick was saved.', inputSchema:{type:'object',properties:{startedAt:{type:'string'},sourceId:{type:'string'},accountId:{type:'string'},sourceUrl:{type:'string'},status:{type:'string',enum:['resolved','excluded','unresolved']},allSelectionsHandled:{type:'boolean'},reason:{type:'string'},attempts:{type:'array',items:{type:'string'},minItems:1}},required:['startedAt','sourceId','accountId','sourceUrl','status','reason','attempts'],additionalProperties:false}},
   { name: 'sports_picks_freshness', description: 'Run FIRST, before reading or interpreting anything. Give the source identifiers, exact post links, posted timestamps and content hashes you can see without interpreting them. Returns only the material no previous successful receipt already covered. When it returns stop:true it has already written the run receipt and the pass is over: do not read, transcribe, classify or capture anything.', inputSchema: { type:'object', properties:{ startedAt:{type:'string'}, accountsChecked:{type:'integer',minimum:0}, accountsBlocked:{type:'integer',minimum:0}, checksSaved:{type:'integer',minimum:0}, note:{type:'string'}, candidates:{type:'array',items:{type:'object',properties:{sourceId:{type:'string'},accountId:{type:'string'},sourceUrl:{type:'string'},postedAt:{type:'string'},contentHash:{type:'string'}},required:['sourceId','accountId','sourceUrl'],additionalProperties:true}} }, required:['startedAt','candidates'], additionalProperties:false } },
   { name: 'sports_picks_read', description: 'Read the private Sports Picks desk and its configured creator roster. The local automation token is read privately from disk.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'sports_picks_capture', description: 'Save one new source pick to the private desk. The Worker derives firm, Lean, or review from originalText. Never invent unknown fields.', inputSchema: { type: 'object', properties: { sourceId:{type:'string'}, accountId:{type:'string'}, sport:{type:'string',enum:['NFL','MLB']}, market:{type:'string'}, selection:{type:'string'}, event:{type:'string'}, eventDate:{type:'string'}, odds:{type:['integer','null']}, postedAt:{type:'string'}, sourceUrl:{type:'string'}, originalText:{type:'string'}, capturedBeforeStart:{type:'boolean'}, checkedUrl:{type:'string'}, checkedAt:{type:'string'} }, required:['sourceId','accountId','sport','market','selection','event','eventDate','sourceUrl','originalText','capturedBeforeStart','checkedUrl','checkedAt'], additionalProperties:false } },
@@ -26,7 +28,7 @@ const tools = [
 // Keep this intentionally aligned with the dashboard's capture classifier. The
 // caller supplies evidence only; classification never becomes an agent choice.
 const LEAN = /\b(?:lean(?:ing|s)?(?:\s+(?:toward|towards|to))?|would\s+have\s+to\s+lean|i'?d\s+lean|maybe|probably|might|i'?d\s+say|i\s+guess|slight(?:ly)?|kind\s+of\s+like|if\s+i\s+had\s+to)\b/i;
-const FIRM = /\b(?:give\s+me|gimme|i\s+love|i'?m\s+(?:on|taking|riding|playing)|lock(?:ed)?\s+it\s+in|lock\s+of\s+the\s+day|take\s+the|i\s+like\s+the|hammer(?:ing)?|my\s+pick\s+is|we'?re\s+taking|the\s+play\s+is|bet\s+the|potd|same[ -]?game\s+parlay|\bsgp\b|home\s*run\s+favou?rite\s+order)\b/i;
+const FIRM = /\b(?:(?:we(?:'re|\s+are)?|i(?:'m|\s+am)?)\s+(?:gonna\s+|going\s+to\s+)?go(?:ing)?\s+with|(?:my|our)\s+(?:picks?|plays?)\s*(?:are|is|:)|(?:hr|home\s*run)\s+calls|give\s+me|gimme|i\s+love|i'?m\s+(?:on|taking|riding|playing)|lock(?:ed)?\s+it\s+in|lock\s+of\s+the\s+day|take\s+the|i\s+like\s+the|hammer(?:ing)?|my\s+pick\s+is|we'?re\s+taking|the\s+play\s+is|bet\s+the|potd|same[ -]?game\s+parlay|\bsgp\b|home\s*run\s+favou?rite\s+order)\b/i;
 const RELAYED = /\b(?:comments?|commenters?|someone|somebody|you\s+guys|dm(?:ed|s)?|chat\s+said|caption\s+says|he\s+said|she\s+said|they\s+said)\b/i;
 function classify(text) {
   const rows = String(text || '').split(/(?<=[.!?])\s+|\n+/).map(row => row.trim()).filter(Boolean);
@@ -134,14 +136,15 @@ function transcribeVideo(url) {
 }
 
 async function handle(message) {
-  if (message.method === 'initialize') return { jsonrpc:'2.0', id:message.id, result:{protocolVersion:'2024-11-05',capabilities:{tools:{}},serverInfo:{name:'sports-picks-local',version:'1.0.0'}} };
+  if (message.method === 'initialize') return { jsonrpc:'2.0', id:message.id, result:{protocolVersion:'2024-11-05',capabilities:{tools:{}},serverInfo:{name:'sports-picks-local',version:'2.0.0'}} };
   if (message.method === 'notifications/initialized') return null;
   if (message.method === 'tools/list') return { jsonrpc:'2.0', id:message.id, result:{tools} };
   if (message.method === 'tools/call') {
     try {
       const args = message.params?.arguments || {};
       let value;
-      if (message.params?.name === 'sports_picks_read') value = await request('read');
+      if (message.params?.name === 'sports_picks_read') value = {...await request('read'), activeRun:runState.read(__dirname)};
+      else if (message.params?.name === 'sports_picks_resolve_post') value = runState.resolve(__dirname,args);
       else if (message.params?.name === 'sports_picks_capture') {
         const verification = {...classify(args.originalText), checkedUrl:args.checkedUrl, checkedAt:args.checkedAt};
         value = await request('save', {pick:args, verification});
@@ -170,13 +173,28 @@ async function handle(message) {
         value = { sourceId:args.sourceId, accountId:args.accountId, sourceUrl:args.sourceUrl, ...local };
       }
       else if (message.params?.name === 'sports_picks_run_receipt') {
-        const receipt = { ...args, note: buildReceiptNote(args) };
+        const state = runState.read(__dirname);
+        if (!state || state.closed || state.startedAt !== args.startedAt) throw Error('No matching unfinished run; initialize freshness before writing a receipt.');
+        const desk = await request('read');
+        // Read back persisted records, including captures made before a bridge restart.
+        pendingCaptures = runState.savedSince(desk, args.startedAt);
+        const {completed, pending} = runState.summarize(state);
+        const unresolved = pending.map(item => ({creator:item.candidate.sourceId, pick:item.candidate.sourceUrl, missing:item.resolution.reason}));
+        const actual = {...args, picksSaved:pendingCaptures.length,
+          needsReview:[...(args.needsReview || []), ...unresolved]};
+        if ((pending.length || args.accountsBlocked > 0 || actual.needsReview.length) && ['complete','no_work'].includes(actual.outcome)) actual.outcome = 'blocked';
+        if (actual.outcome === 'no_work' && actual.picksSaved) actual.outcome = 'complete';
+        const receipt = {...actual, note:buildReceiptNote(actual)};
         delete receipt.technicalNote;
         delete receipt.needsReview;
         value = await request('receipt', {receipt});
         mirrorReceipt(value.receipt);
-        if (pendingFresh.length) { freshness.commit(__dirname, pendingFresh, value.receipt); pendingFresh = []; }
-        pendingCaptures = [];
+        // Only explicit per-post results consume material, even in a partial run.
+        if (actual.outcome !== 'failed' && completed.length) freshness.commit(__dirname, completed, {...value.receipt,outcome:'complete'});
+        runState.write(__dirname,{...state,closed:true,receiptId:value.receipt.id});
+        fs.writeFileSync(path.join(__dirname,'agent-health','sports-picks-report.json'), JSON.stringify({receipt:value.receipt,picks:pendingCaptures,unresolved:pending,needsReview:actual.needsReview}),{mode:0o600});
+        value = {...value, unresolvedPosts:pending.length, instruction:'Use persisted receipt counts. Unresolved posts remain fresh; do not report full completion.'};
+        pendingFresh = []; pendingCaptures = [];
       }
       else if (message.params?.name === 'sports_picks_freshness') {
         // Read the private desk locally through the restricted token so the gate
@@ -184,10 +202,14 @@ async function handle(message) {
         // No creator source is opened and no model interprets this data.
         const desk = await request('read');
         const decision = freshness.evaluate(__dirname, args.candidates, desk.picks);
+        const active = runState.start(__dirname, args.startedAt, decision.coverage);
+        // A resumed run cannot hide unfinished posts with an empty inventory.
+        if (runState.summarize(active).pending.length) decision.stop = false;
         if (decision.stop) {
           const receipt = freshness.zeroReceipt(args);
           const written = await request('receipt', {receipt});
           mirrorReceipt(written.receipt);
+          runState.write(__dirname,{...active,closed:true,receiptId:written.receipt.id});
           if (decision.coverage.length) freshness.commit(__dirname, decision.coverage, written.receipt);
           pendingFresh = [];
           pendingCaptures = [];
@@ -199,8 +221,8 @@ async function handle(message) {
           // alone does not prove an older post was inspected.
           pendingFresh = decision.coverage;
           value = {stop:false, counts:decision.counts, lastReceiptCompletedAt:decision.lastReceiptCompletedAt,
-                   fresh:decision.fresh.map(f => f.candidate), skipped:decision.skipped,
-                   instruction:'Interpret only the material in fresh. Everything else was covered by an earlier successful receipt. ' + evidenceLadderInstruction()};
+                   fresh:runState.summarize(active).pending.map(f => f.candidate), skipped:decision.skipped,
+                   instruction:'Interpret only fresh material. Call sports_picks_resolve_post for every returned post after evidence work. Partial capture is unresolved, not covered. Reuse activeRun.startedAt after interruptions. ' + evidenceLadderInstruction()};
         }
       }
       else throw new Error('Unknown Sports Picks tool.');
@@ -210,14 +232,21 @@ async function handle(message) {
   return message.id === undefined ? null : {jsonrpc:'2.0',id:message.id,error:{code:-32601,message:'Method not found'}};
 }
 
+module.exports = {handle, classify};
+if (require.main === module) {
 let buffer = '';
+let queue = Promise.resolve();
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', async chunk => {
   buffer += chunk;
   const lines = buffer.split('\n'); buffer = lines.pop();
   for (const line of lines) {
     if (!line.trim()) continue;
-    try { const response = await handle(JSON.parse(line)); if (response) process.stdout.write(JSON.stringify(response)+'\n'); }
-    catch { process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:null,error:{code:-32700,message:'Invalid JSON-RPC message'}})+'\n'); }
+    queue = queue.then(async () => {
+      try { const response = await handle(JSON.parse(line)); if (response) process.stdout.write(JSON.stringify(response)+'\n'); }
+      catch { process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:null,error:{code:-32700,message:'Invalid JSON-RPC message'}})+'\n'); }
+    });
   }
 });
+
+}

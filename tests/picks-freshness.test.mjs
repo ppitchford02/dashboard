@@ -73,7 +73,7 @@ test('saved desk records bootstrap coverage when the local index is empty or obs
   const r = root();
   fs.mkdirSync(path.join(r, 'agent-health'), {recursive:true});
   fs.writeFileSync(gate.seenPath(r), JSON.stringify({version:1, entries:{legacy:{}}}));
-  const covered = [{...A, postedAt:'different', contentHash:'different'}];
+  const covered = [{...A, coverageComplete:true, postedAt:'different', contentHash:'different'}];
   const decision = gate.evaluate(r, [A, B], covered);
   assert.equal(decision.stop, false);
   assert.deepEqual(decision.fresh.map(item => item.candidate.sourceUrl), [B.sourceUrl]);
@@ -183,7 +183,7 @@ test('Instagram /p/ and /reel/ shortcodes share one identity while preserving th
   const decision = gate.evaluate(
     r,
     [{ accountId, sourceId, sourceUrl: candidateUrl, postedAt: '2026-09-18T12:00:00Z' }],
-    [{ accountId, sourceId, sourceUrl: coveredUrl }],
+    [{ accountId, sourceId, sourceUrl: coveredUrl, coverageComplete:true }],
   );
   assert.equal(decision.stop, true);
   assert.equal(decision.counts.fresh, 0);

@@ -28,6 +28,7 @@ function evidenceLadderInstruction() {
   return (
     'Before Needs review or leaving identity/odds blank, attempt available evidence in order: '
     + 'exact post text/caption, then local audio/video transcript, then OCR of visible graphics when relevant. '
+    + 'For cheat sheets, inspect the full-resolution image, headings, legend and each row; OCR is a reading aid, not proof by itself. Check the creator’s same-post attachments and directly related follow-up once. Use an official schedule to resolve matchup/date, never to invent the creator’s line or direction. Missing odds alone does not invalidate a stated pick: save odds=null. A player list under an ambiguous heading is a watchlist until its intended bet is established. Do not add over/under or 1+ merely to fill a field. '
     + 'Comments are never pick evidence. A configured-creator link proves provenance, not exact wording. '
     + 'Unknown fields stay blank/null; never invent.'
   );

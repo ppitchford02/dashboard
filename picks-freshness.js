@@ -104,7 +104,8 @@ function partition(candidates, index, covered = []) {
   const entries = (index || emptyIndex()).entries || {};
   const known = new Set(Object.keys(entries));
   for (const item of Array.isArray(covered) ? covered : []) {
-    if (item && item.sourceUrl) known.add(fingerprint(item));
+    // One saved selection does not prove a multi-pick post was fully read.
+    if (item && item.sourceUrl && item.coverageComplete === true) known.add(fingerprint(item));
   }
   const fresh = [];
   const skipped = [];
@@ -152,7 +153,7 @@ function commit(root, fresh, receipt) {
 function zeroReceipt(input) {
   const i = input || {};
   return {
-    outcome: 'no_work',
+    outcome: i.accountsBlocked > 0 ? 'blocked' : 'no_work',
     accountsChecked: Number.isInteger(i.accountsChecked) ? i.accountsChecked : 0,
     accountsBlocked: Number.isInteger(i.accountsBlocked) ? i.accountsBlocked : 0,
     picksSaved: 0,

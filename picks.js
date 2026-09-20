@@ -94,7 +94,7 @@ const transcriber=id=>TRANSCRIBERS.find(t=>t.id===id);
 // Spoken cues only. Order matters: a qualified phrase makes the selection a lean
 // even when firm-sounding words appear in the same sentence.
 const LEAN_CUE=/\b(?:lean(?:ing|s)?(?:\s+(?:toward|towards|to))?|would\s+have\s+to\s+lean|i'?d\s+lean|maybe|probably|might|i'?d\s+say|i\s+guess|slight(?:ly)?|kind\s+of\s+like|if\s+i\s+had\s+to)\b/i;
-const FIRM_CUE=/\b(?:give\s+me|gimme|i\s+love|i'?m\s+(?:on|taking|riding|playing)|lock(?:ed)?\s+it\s+in|lock\s+of\s+the\s+day|take\s+the|i\s+like\s+the|hammer(?:ing)?|my\s+pick\s+is|we'?re\s+taking|the\s+play\s+is|bet\s+the|potd|same[ -]?game\s+parlay|\bsgp\b|home\s*run\s+favou?rite\s+order)\b/i;
+const FIRM_CUE=/\b(?:(?:we(?:'re|\s+are)?|i(?:'m|\s+am)?)\s+(?:gonna\s+|going\s+to\s+)?go(?:ing)?\s+with|(?:my|our)\s+(?:picks?|plays?)\s*(?:are|is|:)|(?:hr|home\s*run)\s+calls|give\s+me|gimme|i\s+love|i'?m\s+(?:on|taking|riding|playing)|lock(?:ed)?\s+it\s+in|lock\s+of\s+the\s+day|take\s+the|i\s+like\s+the|hammer(?:ing)?|my\s+pick\s+is|we'?re\s+taking|the\s+play\s+is|bet\s+the|potd|same[ -]?game\s+parlay|\bsgp\b|home\s*run\s+favou?rite\s+order)\b/i;
 // Sentences that are reading someone else's words are not the creator's pick.
 const RELAYED=/\b(?:comments?|commenters?|someone|somebody|you\s+guys|dm(?:ed|s)?|chat\s+said|caption\s+says|he\s+said|she\s+said|they\s+said)\b/i;
 const FILLER=/^(?:and|so|ok(?:ay)?|alright|now|then|uh|um|look|listen|honestly|i\s+think|i\s+mean|but|also|next)\b[\s,]*/i;

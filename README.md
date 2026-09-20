@@ -384,3 +384,11 @@ or assistant removal; prose such as “tomorrow” does not update itself.
 The Course Load, The Day graph, and Last Run panels have been removed. Their
 historical data is preserved in `data.json` for compatibility with existing
 adapters. Pending panels remain accessible in their own view.
+
+### Per-post evidence resolution (September 20)
+
+The local bridge now requires `sports_picks_resolve_post` for every post released by freshness. A saved selection does not finish a multi-pick post. Record `resolved` only after all recommendations are handled, `excluded` with observed non-pick/settled/out-of-scope evidence, or `unresolved` with attempts and missing facts. Unresolved posts remain fresh; a run with unresolved material cannot claim complete. Resume an unfinished `activeRun.startedAt` instead of starting another inventory. The private journal survives bridge restarts.
+
+Before unresolved: read the full creator graphic and legend, use local transcript/OCR when relevant, check one directly related creator clarification, and use an official schedule for matchup/date only. Unknown odds may remain null; never fabricate creator direction/line. Missing details must produce named pending work, not silently disappear.
+
+Receipt counts are read back from stored picks created since the run start, not model estimates or process memory. This assumes one capture run at a time; do not run concurrent manual captures during it. The report distinguishes all saved records from pending/lean selections and records still in review. Private reports/journals and backups remain ignored. Reload the local MCP after code updates; no Worker schema or secret change is required. Historical records are not automatically promoted or edited by this patch.

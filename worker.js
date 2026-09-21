@@ -763,6 +763,10 @@ export function validatePickInput(input, requireAccount = false) {
   if (pick.market === "Home run" && pick.sport !== "MLB") throw new PickError("Home-run picks must use MLB.");
   // Only recorded when known, so picks saved before creator accounts existed keep
   // byte-identical stored data and revision snapshots.
+  if (value.eventStartAt) {
+    pick.eventStartAt = pickTime(value.eventStartAt, "event start", false);
+    pick.eventTimeSource = pickUrl(value.eventTimeSource);
+  }
   if (accountId) pick.accountId = accountId;
   if (kind !== "firm") pick.kind = kind;
   if (transcriptId) pick.transcriptId = transcriptId;
@@ -1116,6 +1120,11 @@ export async function handlePicksRequest(request, env) {
     if (origin && origin !== PICKS_ORIGIN) return picksReply({ error: "Open Sports Picks from your dashboard." }, 403);
     if (body.action !== "import" && raw.length > 25000) return picksReply({ error: "Keep each request under 25,000 characters." }, 413);
     if (!env.PICKS_DB) throw new Error("PICKS_DATABASE_UNAVAILABLE");
+    if (byToken && body.action === "save") {
+      const pick = body.pick || {}, start = Date.parse(pick.eventStartAt);
+      if (!/(?:Z|[+-]\d{2}:\d{2})$/i.test(String(pick.eventStartAt || "")) || !Number.isFinite(start) || start <= Date.now()) return picksReply({error:"Capture requires a verified future event start; started or untimed games cannot be saved by automation."},400);
+      if (!/^https:\/\//i.test(String(pick.eventTimeSource || "")) || pick.capturedBeforeStart !== true || pick.eventDate !== new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(start))) return picksReply({error:"Confirm the official event time, matching Eastern game date, and pre-start capture."},400);
+    }
     return await runPicksAction(body, env.PICKS_DB);
   } catch (error) {
     if (error instanceof PickError) return picksReply({ error: error.message }, error.status);

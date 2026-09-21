@@ -34,3 +34,8 @@ agent-health/sports-picks-report.json
 
 # Private source recovery instructions, never publish.
 agent-health/sports-picks-run-*-handoff.md
+
+# Isolated build/research dependencies and private cached source captures.
+node_modules/
+.research-venv/
+.research-cache/

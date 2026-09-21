@@ -40,7 +40,7 @@ test('counts include saved review records and survive empty process memory',()=>
     {id:'b',createdAt:at,status:'review',kind:'unclear',selection:'Player B'},
   ]},at);
   assert.equal(picks.length,2);
-  const report=formatRunReport({picks});
+  const report=formatRunReport({picks:picks.map(p=>({...p,eventStartAt:'2099-09-11T23:00:00Z',eventTimeSource:'https://example.com/schedule'}))});
   assert.equal(report.counts.picksSaved,2);
   assert.equal(report.counts.picksListed,1);
   assert.match(report.primary,/2 picks saved/);
@@ -69,11 +69,13 @@ test('inventory is checkpointed before gate and resumes across a reload without 
  assert.throws(()=>state.checkpoint(r,{startedAt:at,sourceId:'wrong',accountId:'a',status:'checked',candidates:[A]}),/belong/);
 });
 
-test('new pass retains only unfinished posts from a closed partial run',()=>{
+test('new day defers old unknown-date posts without declaring coverage',()=>{
  const r=root();state.start(r,at,gate.evaluate(r,[A,B]).fresh);
  state.resolve(r,{...A,startedAt:at,status:'excluded',reason:'not a pick',attempts:['read post']});
  state.write(r,{...state.read(r),closed:true});
  const next=state.checkpoint(r,{startedAt:'2026-09-21T15:00:00Z'});
- assert.deepEqual(state.summarize(next).pending.map(x=>x.candidate),[B]);
+ assert.deepEqual(state.summarize(next).pending.map(x=>x.candidate),[]);
+ assert.deepEqual(next.deferred.map(x=>x.candidate),[B]);
+ assert.equal(gate.evaluate(r,[B]).fresh.length,1);
  assert.equal(next.recoveryFrom,at);
 });

@@ -4,7 +4,8 @@ import { createRequire } from 'node:module';
 import fs from 'node:fs';
 
 const require = createRequire(import.meta.url);
-const { formatRunReport } = require('../picks-run-report.js');
+const { formatRunReport: rawFormat } = require('../picks-run-report.js');
+const formatRunReport = input => rawFormat({...input,picks:(input.picks||[]).map(p=>({eventStartAt:'2099-09-11T23:00:00Z',eventTimeSource:'https://example.com/schedule',...p}))});
 
 // Fictional example selections only — not live desk records.
 

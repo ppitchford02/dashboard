@@ -22,14 +22,23 @@ function start(root, startedAt, released) {
   const state = old && old.startedAt === startedAt ? old : {startedAt, released:[], resolutions:{}, closed:false};
   if (state.closed) throw Error('This run already has a receipt. Use a new startedAt.');
   if (old?.closed && old.startedAt !== startedAt) {
-    state.released = summarize(old).pending;
+    const today = easternDay(startedAt);
+    const pending = summarize(old).pending;
+    const retained = pending.filter(item => easternDay(old.startedAt) === today || String(item.candidate?.eventDate || '') >= today);
+    state.deferred = [...(old.deferred || []), ...pending.filter(item => !retained.includes(item))];
+    state.released = retained;
     state.recoveryFrom = old.startedAt;
     state.resolutions = Object.fromEntries(state.released.filter(item => old.resolutions[item.fingerprint]).map(item => [item.fingerprint,old.resolutions[item.fingerprint]]));
   }
   const items = new Map(state.released.map(item => [item.fingerprint, item]));
   for (const item of released) items.set(item.fingerprint, item);
-  state.released = [...items.values()];
+  // New inventory comes before retries, so a backlog cannot starve discovery.
+  const freshKeys = new Set(released.map(item => item.fingerprint));
+  state.released = [...items.values()].sort((a,b) => Number(freshKeys.has(b.fingerprint)) - Number(freshKeys.has(a.fingerprint)));
   return write(root, state);
+}
+function easternDay(value) {
+  return new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(value));
 }
 function checkpoint(root, args) {
   const state = start(root,args.startedAt,[]);

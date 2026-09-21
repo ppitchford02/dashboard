@@ -78,10 +78,10 @@ print(json.dumps(out))
         frame_paths = [str(p) for p in sorted(frames.glob('*.jpg'))[:args.max_frames]]
         ocr = subprocess.run([str(PYTHON), '-c', ocr_code, *frame_paths], text=True, capture_output=True, timeout=45)
         visual = [] if ocr.returncode else json.loads(ocr.stdout)
-        transcript = '\n'.join(dict.fromkeys(([speech] if speech else []) + visual)).strip()
-        if not transcript:
+        transcript = speech.strip()
+        if not transcript and not visual:
             fail('No readable spoken or on-screen creator text was found in this video.')
-        print(json.dumps({'ok': True, 'transcript': transcript, 'segments': segments, 'language': 'en', 'visualText': visual}))
+        print(json.dumps({'ok': True, 'transcript': transcript, 'segments': segments, 'language': 'en', 'visualText': visual, 'engine': 'faster-whisper/' + args.model}))
     except subprocess.TimeoutExpired:
         fail('Video retrieval or transcription timed out.')
     finally:

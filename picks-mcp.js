@@ -19,7 +19,7 @@ const tools = [
   { name:'sports_picks_resolve_post', description:'Record the actual evidence result for ONE released post. Read the full graphic/legend, audio or related creator clarification before giving up. resolved means EVERY recommendation was saved or already exists; excluded needs observed reason (non-pick, settled event or outside NFL/MLB); unresolved stays pending. Never resolve from a listing caption or merely because one pick was saved.', inputSchema:{type:'object',properties:{startedAt:{type:'string'},sourceId:{type:'string'},accountId:{type:'string'},sourceUrl:{type:'string'},status:{type:'string',enum:['resolved','excluded','unresolved']},allSelectionsHandled:{type:'boolean'},reason:{type:'string'},attempts:{type:'array',items:{type:'string'},minItems:1}},required:['startedAt','sourceId','accountId','sourceUrl','status','reason','attempts'],additionalProperties:false}},
   { name: 'sports_picks_freshness', description: 'Run FIRST, before reading or interpreting anything. Give the source identifiers, exact post links, posted timestamps and content hashes you can see without interpreting them. Returns only the material no previous successful receipt already covered. When it returns stop:true it has already written the run receipt and the pass is over: do not read, transcribe, classify or capture anything.', inputSchema: { type:'object', properties:{ startedAt:{type:'string'}, accountsChecked:{type:'integer',minimum:0}, accountsBlocked:{type:'integer',minimum:0}, checksSaved:{type:'integer',minimum:0}, note:{type:'string'}, candidates:{type:'array',items:{type:'object',properties:{sourceId:{type:'string'},accountId:{type:'string'},sourceUrl:{type:'string'},postedAt:{type:'string'},contentHash:{type:'string'}},required:['sourceId','accountId','sourceUrl'],additionalProperties:true}} }, required:['startedAt','candidates'], additionalProperties:false } },
   { name: 'sports_picks_read', description: 'Read the private Sports Picks desk and its configured creator roster. The local automation token is read privately from disk.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
-  { name: 'sports_picks_capture', description: 'Save one new source pick to the private desk. The Worker derives firm, Lean, or review from originalText. Never invent unknown fields.', inputSchema: { type: 'object', properties: { sourceId:{type:'string'}, accountId:{type:'string'}, sport:{type:'string',enum:['NFL','MLB']}, market:{type:'string'}, selection:{type:'string'}, event:{type:'string'}, eventDate:{type:'string'}, odds:{type:['integer','null']}, postedAt:{type:'string'}, sourceUrl:{type:'string'}, originalText:{type:'string'}, capturedBeforeStart:{type:'boolean'}, checkedUrl:{type:'string'}, checkedAt:{type:'string'} }, required:['sourceId','accountId','sport','market','selection','event','eventDate','sourceUrl','originalText','capturedBeforeStart','checkedUrl','checkedAt'], additionalProperties:false } },
+  { name: 'sports_picks_capture', description: 'Save one new source pick to the private desk. The Worker derives firm, Lean, or review from originalText. Require eventStartAt (ISO with timezone) and eventTimeSource (official schedule URL). Check current event status; skip started/completed/cancelled games. Never infer game date from post date. Never invent unknown fields.', inputSchema: { type: 'object', properties: { sourceId:{type:'string'}, accountId:{type:'string'}, sport:{type:'string',enum:['NFL','MLB']}, market:{type:'string'}, selection:{type:'string'}, event:{type:'string'}, eventDate:{type:'string'}, eventStartAt:{type:'string'}, eventTimeSource:{type:'string'}, odds:{type:['integer','null']}, postedAt:{type:'string'}, sourceUrl:{type:'string'}, originalText:{type:'string'}, capturedBeforeStart:{type:'boolean'}, checkedUrl:{type:'string'}, checkedAt:{type:'string'} }, required:['sourceId','accountId','sport','market','selection','event','eventDate','eventStartAt','eventTimeSource','sourceUrl','originalText','capturedBeforeStart','checkedUrl','checkedAt'], additionalProperties:false } },
   { name: 'sports_picks_transcribe_video', description: 'Transcribe a creator video locally from its exact post URL, save the private audio transcript, and return its transcript id and spoken words. Use only for the creator’s own video; never captions or comments. Second evidence-ladder step after caption/post text; try OCR next when a visible graphic may hold names or odds.', inputSchema: { type:'object', properties:{sourceId:{type:'string'},accountId:{type:'string'},sourceUrl:{type:'string'}}, required:['sourceId','accountId','sourceUrl'], additionalProperties:false } },
   { name: 'sports_picks_ocr_frames', description: 'Run local OCR on frame image paths already extracted from a creator post. Third step in the evidence ladder after caption/post text and local transcript. Comments are never pick evidence. Returns extracted text only; unknown fields stay null.', inputSchema: { type:'object', properties:{ sourceId:{type:'string'}, accountId:{type:'string'}, sourceUrl:{type:'string'}, framePaths:{type:'array',items:{type:'string'},minItems:1} }, required:['sourceId','accountId','sourceUrl','framePaths'], additionalProperties:false } },
   { name: 'sports_picks_source_check', description: 'Record one source check after actually checking that creator. Do not use this to create a pick.', inputSchema: { type:'object', properties:{sourceId:{type:'string'},status:{type:'string',enum:['Checked','No new posts','Sign-in needed','Access blocked','Needs review']},note:{type:'string'}}, required:['sourceId','status','note'], additionalProperties:false } },
@@ -152,18 +152,30 @@ function transcribeVideo(url) {
   });
 }
 
+function assertUpcoming(pick, now = Date.now()) {
+  const start = Date.parse(pick.eventStartAt);
+  if (!/(Z|[+-]\d{2}:\d{2})$/.test(pick.eventStartAt || '') || !Number.isFinite(start) || start <= now) throw Error('Do not capture: game has started or its start time is unverified. Verify the official schedule; never guess.');
+  if (!/^https:\/\//.test(pick.eventTimeSource || '')) throw Error('An official schedule evidence URL is required.');
+  const day = new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(start));
+  if (pick.eventDate !== day || pick.capturedBeforeStart !== true) throw Error('Event date/timing must match the verified future start in Eastern time.');
+}
+
 async function handle(message) {
   if (message.method === 'initialize') return { jsonrpc:'2.0', id:message.id, result:{protocolVersion:'2024-11-05',capabilities:{tools:{}},serverInfo:{name:'sports-picks-local',version:'2.1.0'}} };
   if (message.method === 'notifications/initialized') return null;
   if (message.method === 'tools/list') return { jsonrpc:'2.0', id:message.id, result:{tools} };
   if (message.method === 'tools/call') {
     try {
-      const args = message.params?.arguments || {};
+      const args = message.params?.arguments ?? {};
+      const validate = require('./picks-validators.js')[message.params?.name];
+      if (typeof validate !== 'function') throw new Error('Unknown Sports Picks tool.');
+      if (!validate(args)) throw new Error('Invalid tool arguments: ' + validate.errors.map(e => `${e.instancePath || '/'} ${e.message}`).join('; '));
       let value;
       if (message.params?.name === 'sports_picks_read') value = {...await request('read'), activeRun:runState.read(__dirname)};
-      else if (message.params?.name === 'sports_picks_checkpoint') { const state = runState.checkpoint(__dirname,args); keepAwake(); value = {startedAt:state.startedAt, checkpointSaved:true, accountsCheckpointed:Object.keys(state.inventory || {}).length, unfinishedPosts:runState.summarize(state).pending.length, recoveryFrom:state.recoveryFrom || null, instruction:state.recoveryFrom ? 'Recover the retained unfinished posts with freshness candidates:[] before collecting new inventory. Do not redo completed posts.' : 'Checkpoint each account immediately after inventory.', idleSleepProtection:!!awake}; }
+      else if (message.params?.name === 'sports_picks_checkpoint') { const state = runState.checkpoint(__dirname,args); keepAwake(); value = {startedAt:state.startedAt, checkpointSaved:true, accountsCheckpointed:Object.keys(state.inventory || {}).length, unfinishedPosts:runState.summarize(state).pending.length, recoveryFrom:state.recoveryFrom || null, instruction:state.recoveryFrom ? 'Inventory current NFL/MLB posts FIRST on every scheduled pass, even with recoveryFrom. Then process fresh material before retained retries. Old deferred posts are history, not proof of expiry. Never skip discovery because a backlog exists.' : 'Checkpoint each account immediately after inventory.', idleSleepProtection:!!awake}; }
       else if (message.params?.name === 'sports_picks_resolve_post') value = runState.resolve(__dirname,args);
       else if (message.params?.name === 'sports_picks_capture') {
+        assertUpcoming(args);
         const verification = {...classify(args.originalText), checkedUrl:args.checkedUrl, checkedAt:args.checkedAt};
         value = await request('save', {pick:args, verification});
         pendingCaptures.push({
@@ -179,11 +191,7 @@ async function handle(message) {
       }
       else if (message.params?.name === 'sports_picks_transcribe_video') {
         const local = await transcribeVideo(args.sourceUrl);
-        value = await request('transcript', {transcript:{
-          sourceId:args.sourceId, accountId:args.accountId, sourceUrl:args.sourceUrl,
-          medium:'audio', engine:'faster-whisper/base.en', transcript:local.transcript,
-          transcribedAt:new Date().toISOString(),
-        }});
+        value = await saveVideoEvidence(args, local, request);
       }
       else if (message.params?.name === 'sports_picks_source_check') value = await request('check', args);
       else if (message.params?.name === 'sports_picks_ocr_frames') {
@@ -254,7 +262,18 @@ async function handle(message) {
   return message.id === undefined ? null : {jsonrpc:'2.0',id:message.id,error:{code:-32601,message:'Method not found'}};
 }
 
-module.exports = {handle, classify};
+async function saveVideoEvidence(args, local, send) {
+  const spoken = typeof local.transcript === 'string' ? local.transcript.trim() : '';
+  const visualText = Array.isArray(local.visualText) ? local.visualText : [];
+  const saved = spoken ? await send('transcript', {transcript:{
+    sourceId:args.sourceId, accountId:args.accountId, sourceUrl:args.sourceUrl,
+    medium:'audio', engine:local.engine || 'faster-whisper/unknown', transcript:spoken,
+    transcribedAt:new Date().toISOString(),
+  }}) : {transcript:null};
+  return {...saved, spokenText:spoken, visualText, visualMedium:'on-screen OCR',
+    instruction:'OCR is visual evidence, not spoken words. Check uncertain names and numbers against the creator graphic before saving a pick.'};
+}
+module.exports = { assertUpcoming,handle, classify, tools, saveVideoEvidence};
 if (require.main === module) {
 let buffer = '';
 let queue = Promise.resolve();

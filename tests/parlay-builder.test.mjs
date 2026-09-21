@@ -10,7 +10,7 @@ const builder = context.window.PitchfordParlay;
 builder.setRoster([{id: 'danny'}, {id: 'stunad'}, {id: 'nick'}, {id: 'cru'}, {id: 'sbd'}, {id: 'bat'}].map(creator => ({...creator, name: creator.id, accounts: []})));
 
 test('builder only forwards confirmed, dated anytime touchdown records from saved sources', () => {
-  const base = { sourceId: 'cru', sport: 'NFL', eventDate: '2026-09-13', status: 'pending', archived: false,
+  const base = { eventStartAt:'2099-09-13T23:00:00Z', eventTimeSource:'https://example.com/schedule', sourceId: 'cru', sport: 'NFL', eventDate: '2026-09-13', status: 'pending', archived: false,
     capturedBeforeStart: true, selection: 'Jahmyr Gibbs 1+ TD', market: 'Player prop',
     event: 'Saints at Lions', sourceUrl: 'https://example.com/channels/example', originalText: 'Anytime touchdown: Jahmyr Gibbs' };
   const picks = [base,

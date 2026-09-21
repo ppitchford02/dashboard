@@ -114,13 +114,23 @@ function pick(overrides = {}) {
   return {
     id: 'example-pick', sourceId: 'sbd', sport: 'MLB', market: 'Home run',
     selection: 'Example player home run', event: 'Example away at Example home',
-    eventDate: '2026-09-11', odds: 350, postedAt: '2026-09-11T12:00:00Z',
+    eventStartAt:'2099-09-11T23:00:00Z', eventTimeSource:'https://example.com/schedule', eventDate: '2026-09-11', odds: 350, postedAt: '2026-09-11T12:00:00Z',
     sourceUrl: 'https://example.com/source-post', originalText: 'Example source evidence.',
     capturedBeforeStart: true, status: 'pending', resultEvidence: '', resultUrl: '',
     createdAt: '2026-09-11T12:05:00Z', updatedAt: '2026-09-11T12:05:00Z',
     archived: false, revision: 1, ...overrides,
   };
 }
+
+test('current picks expire at start and never display settled or untimed records', () => {
+  const ui=harness(async()=>desk());
+  const current=ui.context.window.PitchfordPicks.currentPick;
+  const p=pick({eventStartAt:'2026-09-21T23:00:00Z'});
+  assert.equal(current(p,Date.parse('2026-09-21T22:59:59Z')),true);
+  assert.equal(current(p,Date.parse('2026-09-21T23:00:00Z')),false);
+  assert.equal(current({...p,eventStartAt:''},0),false);
+  assert.equal(current({...p,status:'win'},0),false);
+});
 
 const desk = (picks = []) => ({ roster: PICK_ROSTER, picks, checks: [], revisions: [] });
 
@@ -482,15 +492,15 @@ test('leans are listed separately and never reach eligible picks or source recor
   });
   const ui = harness(async () => desk([firm, lean]));
   await ui.get('picks-unlock').fire('click');
-  assert.deepEqual(lines(ui), ['- Texans moneyline']);
-  assert.deepEqual(ui.get('picks-leans-list').children.map(node => node.textContent), ['- Bengals–Buccaneers over 42.5']);
+  assert.deepEqual(lines(ui), ['- No eligible picks right now.']);
+  assert.deepEqual(ui.get('picks-leans-list').children.map(node => node.textContent), ['- No leans recorded.']);
   assert.equal(ui.get('picks-clean-held').textContent, '', 'a lean is not a held-back pick');
   const record = ui.context.window.PitchfordPicks.stats([firm, lean]);
   assert.equal(record.wins, 1);
   assert.equal(record.eligible, 1);
   const stored = JSON.parse(await ui.tool('dashboard_picks_read').execute({}));
-  assert.deepEqual(stored.cleanList, ['Texans moneyline']);
-  assert.deepEqual(stored.leans.map(item => item.text), ['Bengals–Buccaneers over 42.5']);
+  assert.deepEqual(stored.cleanList, []);
+  assert.deepEqual(stored.leans.map(item => item.text), []);
 });
 
 test('the capture form classifies the pasted wording itself and never asks Preston to choose', async () => {

@@ -17,6 +17,7 @@
 
   function verifiedTouchdowns(picks, day, known = SOURCE_NAMES) {
     return picks.filter(p => {
+      if (!Number.isFinite(Date.parse(p.eventStartAt)) || Date.parse(p.eventStartAt) <= Date.now() || !/^https:\/\//.test(p.eventTimeSource || '')) return false;
       if (p.sport !== 'NFL' || p.eventDate !== day || p.archived || p.status !== 'pending' || !p.capturedBeforeStart) return false;
       if (p.kind === 'lean') return false;
       if (!known[p.sourceId] || !p.selection?.trim() || !p.originalText?.trim()) return false;

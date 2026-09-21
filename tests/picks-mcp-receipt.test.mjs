@@ -7,7 +7,7 @@ import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url);
 test('MCP receipt reads persisted counts and leaves unreviewed source pending across restart',async()=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'mcp-receipt-'));
-  for(const f of ['picks-mcp.js','picks-freshness.js','picks-run-state.js','picks-run-report.js','picks-evidence-ladder.js']) fs.copyFileSync(new URL('../'+f,import.meta.url),path.join(root,f));
+  for(const f of ['picks-mcp.js','picks-validators.js','picks-freshness.js','picks-run-state.js','picks-run-report.js','picks-evidence-ladder.js']) fs.copyFileSync(new URL('../'+f,import.meta.url),path.join(root,f));
   fs.writeFileSync(path.join(root,'token'),'test-only-'.repeat(8));
   const prevToken=process.env.PICKS_TOKEN_FILE, prevFetch=global.fetch;
   process.env.PICKS_TOKEN_FILE=path.join(root,'token');

@@ -22,6 +22,15 @@ const source = {
   originalText: 'Original test post: Test Player to hit a home run.', capturedBeforeStart: false,
 };
 
+test('verified event timing persists through Worker validation without changing legacy records',()=>{
+  loadRoster(ROSTER);
+  const legacy=validatePickInput(source);
+  assert.equal('eventStartAt' in legacy,false);
+  const timed=validatePickInput({...source,eventStartAt:'2099-09-11T23:00:00Z',eventTimeSource:'https://example.com/schedule'});
+  assert.equal(Date.parse(timed.eventStartAt),Date.parse('2099-09-11T23:00:00Z'));
+  assert.equal(timed.eventTimeSource,'https://example.com/schedule');
+});
+
 // Execute real SQLite statements/transactions while implementing the small D1
 // binding interface used by the Worker. No network, credentials, or real picks.
 function database(existing) {
@@ -530,7 +539,8 @@ test('the automation token authenticates without the passphrase and only for its
   const opened = await asAgent({action: 'read'});
   assert.equal(opened.status, 200, JSON.stringify(opened.data));
   assert.equal(opened.data.roster.length, ROSTER_LIST.length);
-  const complete = {...source, event: 'Test Away at Test Home', sourceUrl: 'https://example.com/agent/1'};
+  const complete = {...source, event: 'Test Away at Test Home', sourceUrl: 'https://example.com/agent/1', eventDate:'2099-09-21', eventStartAt:'2099-09-21T23:00:00Z', eventTimeSource:'https://example.com/schedule', capturedBeforeStart:true};
+  for(const patch of [{eventStartAt:'2020-01-01T23:00:00Z'},{eventStartAt:''},{eventTimeSource:''},{eventDate:'2099-09-22'}]) assert.equal((await asAgent(capture({...complete,...patch},'firm'))).status,400);
   const saved = await asAgent(capture(complete, 'firm'));
   assert.equal(saved.status, 201, JSON.stringify(saved.data));
   assert.equal((await asAgent({action: 'check', sourceId: 'nick', status: 'Checked', note: 'Scheduled pass.'})).status, 200);

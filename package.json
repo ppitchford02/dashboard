@@ -1,1 +1,10 @@
-{"private":true,"type":"commonjs"}
+{
+  "private": true,
+  "type": "commonjs",
+  "devDependencies": {
+    "ajv": "8.17.1"
+  },
+  "scripts": {
+    "build:validators": "node scripts/build-picks-validators.js"
+  }
+}

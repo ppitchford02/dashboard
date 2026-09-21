@@ -31,6 +31,8 @@ function formatRunReport(input = {}) {
 
   const groups = new Map();
   for (const pick of picks) {
+    // Reports are actionable recommendations, not a replay of historical captures.
+    if (!Number.isFinite(Date.parse(pick.eventStartAt)) || Date.parse(pick.eventStartAt) <= (input.now ?? Date.now()) || !/^https:\/\//.test(pick.eventTimeSource || '') || ['win','loss','push','void'].includes(pick.status)) continue;
     const kind = String(pick?.kind || pick?.classification || pick?.outcome || '').toLowerCase();
     if (pick?.status === 'review' || kind === 'unclear' || kind === 'review') continue;
     const label = creatorLabel(pick, roster);

@@ -31,10 +31,16 @@ function start(root, startedAt, released) {
     state.resolutions = Object.fromEntries(state.released.filter(item => old.resolutions[item.fingerprint]).map(item => [item.fingerprint,old.resolutions[item.fingerprint]]));
   }
   const items = new Map(state.released.map(item => [item.fingerprint, item]));
-  for (const item of released) items.set(item.fingerprint, item);
+  const currentFingerprints = new Set();
+  for (const item of released) {
+    currentFingerprints.add(item.fingerprint);
+    const previous = items.get(item.fingerprint);
+    items.set(item.fingerprint, {...previous,...item,firstSeenAt:previous?.firstSeenAt || startedAt,lastSeenAt:startedAt});
+  }
   // New inventory comes before retries, so a backlog cannot starve discovery.
   const freshKeys = new Set(released.map(item => item.fingerprint));
   state.released = [...items.values()].sort((a,b) => Number(freshKeys.has(b.fingerprint)) - Number(freshKeys.has(a.fingerprint)));
+  state.currentFingerprints = [...currentFingerprints];
   return write(root, state);
 }
 function easternDay(value) {
@@ -72,9 +78,16 @@ function summarize(state) {
   }
   return {completed,pending};
 }
+function summarizeCurrent(state) {
+  const all = summarize(state);
+  const current = new Set(state.currentFingerprints || []);
+  const today = easternDay(state.startedAt);
+  const applies = item => current.has(item.fingerprint) || String(item.candidate?.eventDate || '') >= today;
+  return {completed:all.completed.filter(applies),pending:all.pending.filter(applies)};
+}
 function savedSince(desk, startedAt) {
   const start = Date.parse(startedAt);
   if (!Number.isFinite(start)) throw Error('Invalid run start.');
   return (desk.picks || []).filter(p => Number.isFinite(Date.parse(p.createdAt)) && Date.parse(p.createdAt) >= start);
 }
-module.exports = {read,write,start,checkpoint,resolve,summarize,savedSince};
+module.exports = {read,write,start,checkpoint,resolve,summarize,summarizeCurrent,savedSince};

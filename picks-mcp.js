@@ -30,14 +30,17 @@ const tools = [
 // caller supplies evidence only; classification never becomes an agent choice.
 const LEAN = /\b(?:lean(?:ing|s)?(?:\s+(?:toward|towards|to))?|would\s+have\s+to\s+lean|i'?d\s+lean|maybe|probably|might|i'?d\s+say|i\s+guess|slight(?:ly)?|kind\s+of\s+like|if\s+i\s+had\s+to)\b/i;
 const FIRM = /\b(?:(?:we(?:'re|\s+are)?|i(?:'m|\s+am)?)\s+(?:gonna\s+|going\s+to\s+)?go(?:ing)?\s+with|(?:my|our)\s+(?:picks?|plays?)\s*(?:are|is|:)|(?:hr|home\s*run)\s+calls|give\s+me|gimme|i\s+love|i'?m\s+(?:on|taking|riding|playing)|lock(?:ed)?\s+it\s+in|lock\s+of\s+the\s+day|take\s+the|i\s+like\s+the|hammer(?:ing)?|my\s+pick\s+is|we'?re\s+taking|the\s+play\s+is|bet\s+the|potd|same[ -]?game\s+parlay|\bsgp\b|home\s*run\s+favou?rite\s+order)\b/i;
+const DIRECT_CARD = /\b(?:add(?:ing)?\s+(?:this|it)?\s*to\s+(?:the|my|our)\s+card|first\s+touchdown\s+scorer(?:\s+lotto)?|anytime\s+touchdown(?:\s+scorer)?|(?:official|final)\s+(?:pick|play)|card\s*(?:is|:)|cheat\s*sheet)\b/i;
 const RELAYED = /\b(?:comments?|commenters?|someone|somebody|you\s+guys|dm(?:ed|s)?|chat\s+said|caption\s+says|he\s+said|she\s+said|they\s+said)\b/i;
-function classify(text) {
+function normalized(value) { return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+function classify(text, selection = '') {
   const rows = String(text || '').split(/(?<=[.!?])\s+|\n+/).map(row => row.trim()).filter(Boolean);
+  const statedSelection = normalized(selection);
   let lean = false;
   for (const row of rows) {
     if (RELAYED.test(row)) continue;
     if (LEAN.test(row)) lean = true;
-    else if (FIRM.test(row)) return {outcome:'firm', reason:''};
+    else if (FIRM.test(row) || DIRECT_CARD.test(row) || (statedSelection && normalized(row).includes(statedSelection))) return {outcome:'firm', reason:''};
   }
   return lean ? {outcome:'lean', reason:''} : {outcome:'unclear', reason:'No stated pick or lean in the captured wording.'};
 }
@@ -176,7 +179,7 @@ async function handle(message) {
       else if (message.params?.name === 'sports_picks_resolve_post') value = runState.resolve(__dirname,args);
       else if (message.params?.name === 'sports_picks_capture') {
         assertUpcoming(args);
-        const verification = {...classify(args.originalText), checkedUrl:args.checkedUrl, checkedAt:args.checkedAt};
+        const verification = {...classify(args.originalText,args.selection), checkedUrl:args.checkedUrl, checkedAt:args.checkedAt};
         value = await request('save', {pick:args, verification});
         pendingCaptures.push({
           sourceId: args.sourceId,
@@ -205,9 +208,10 @@ async function handle(message) {
         // Read back persisted records, including captures made before a bridge restart.
         pendingCaptures = runState.savedSince(desk, args.startedAt);
         const {completed, pending} = runState.summarize(state);
+        const currentPending = runState.summarizeCurrent(state).pending;
         const actual = {...args, picksSaved:pendingCaptures.length,
-          needsReview:args.needsReview || [], unfinishedPosts:pending.length};
-        if ((pending.length || args.accountsBlocked > 0 || actual.needsReview.length) && ['complete','no_work'].includes(actual.outcome)) actual.outcome = 'blocked';
+          needsReview:args.needsReview || [], unfinishedPosts:currentPending.length};
+        if ((currentPending.length || args.accountsBlocked > 0 || actual.needsReview.length) && ['complete','no_work'].includes(actual.outcome)) actual.outcome = 'blocked';
         if (actual.outcome === 'no_work' && actual.picksSaved) actual.outcome = 'complete';
         const receipt = {...actual, note:buildReceiptNote(actual)};
         delete receipt.technicalNote;
@@ -220,7 +224,7 @@ async function handle(message) {
         if (actual.outcome !== 'failed' && completed.length) freshness.commit(__dirname, completed, {...value.receipt,outcome:'complete'});
         runState.write(__dirname,{...state,closed:true,receiptId:value.receipt.id});
         fs.writeFileSync(path.join(__dirname,'agent-health','sports-picks-report.json'), JSON.stringify({receipt:value.receipt,picks:pendingCaptures,unresolved:pending,needsReview:actual.needsReview}),{mode:0o600});
-        value = {...value, unresolvedPosts:pending.length, instruction:'Use persisted receipt counts. Unresolved posts remain fresh; do not report full completion.'};
+        value = {...value, unresolvedPosts:currentPending.length, deferredEvidenceBacklog:pending.length-currentPending.length, instruction:'Use persisted receipt counts. Current unresolved posts remain fresh; older unknown evidence stays deferred and must not be reported as current unfinished work.'};
         pendingFresh = []; pendingCaptures = [];
       }
       else if (message.params?.name === 'sports_picks_freshness') {
@@ -233,7 +237,7 @@ async function handle(message) {
         const decision = freshness.evaluate(__dirname, [...inventory,...(args.candidates || [])], desk.picks);
         const active = runState.start(__dirname, args.startedAt, decision.coverage);
         // A resumed run cannot hide unfinished posts with an empty inventory.
-        if (runState.summarize(active).pending.length) decision.stop = false;
+        if (runState.summarizeCurrent(active).pending.length) decision.stop = false;
         if (decision.stop) {
           const receipt = freshness.zeroReceipt(args);
           const written = await request('receipt', {receipt});

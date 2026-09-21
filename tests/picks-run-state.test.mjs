@@ -52,12 +52,27 @@ test('empty inventory with blocked accounts cannot produce no_work',()=>{
 
 // Clear recommendation language must not require the exact phrase "give me".
 test('spoken go-with and HR-calls headings are recommendations, not automatic review',()=>{
-  const {classify}=require('../picks-mcp.js');
+ const {classify}=require('../picks-mcp.js');
   assert.equal(classify("We're gonna go with Player A for 36 receiving yards").outcome,'firm');
   assert.equal(classify('HR CALLS — Player A, Player B').outcome,'firm');
   assert.equal(classify('I might go with Player A').outcome,'lean');
   assert.equal(classify('Comments: my pick is Player A').outcome,'unclear');
-  assert.equal(classify('MLB HITS — Player A, Player B').outcome,'unclear');
+ assert.equal(classify('MLB HITS — Player A, Player B').outcome,'unclear');
+ assert.equal(classify('FIRST TOUCHDOWN SCORER LOTTO @everyone DAVANTE ADAMS','Davante Adams — first touchdown scorer').outcome,'firm');
+ assert.equal(classify('Kyren Williams 2+ Receptions The Giants allow receiving yards to RBs.','Kyren Williams 2+ receptions').outcome,'firm');
+ assert.equal(classify('Something came across my desk that I would like to add to the card: Malachi Fields Over 25.5 Rec Yards (-115)','Malachi Fields Over 25.5 receiving yards').outcome,'firm');
+ assert.equal(classify('I might add Player A to the card','Player A').outcome,'lean');
+});
+
+test('receipt-facing current summary excludes retained unknown backlog',()=>{
+ const r=root();
+ state.start(r,at,gate.evaluate(r,[A,B]).fresh);
+ state.write(r,{...state.read(r),closed:true});
+ const nextAt='2026-09-20T21:00:00Z';
+ const C={...A,sourceUrl:'https://example.com/post/3',postedAt:'2026-09-20T20:30:00Z'};
+ const next=state.start(r,nextAt,gate.evaluate(r,[C]).fresh);
+ assert.equal(state.summarize(next).pending.length,3);
+ assert.deepEqual(state.summarizeCurrent(next).pending.map(x=>x.candidate),[C]);
 });
 test('inventory is checkpointed before gate and resumes across a reload without claiming coverage',()=>{
  const r=root();state.checkpoint(r,{startedAt:at});

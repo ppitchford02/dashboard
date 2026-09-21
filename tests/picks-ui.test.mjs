@@ -522,6 +522,11 @@ test('the capture form classifies the pasted wording itself and never asks Prest
     assert.equal(ui.get('pick-kind').value, kind, wording);
   }
   assert.match(ui.get('pick-class-state').textContent, /Unclear .* Relays someone/);
+  for (const [wording, selection] of [
+    ['FIRST TOUCHDOWN SCORER LOTTO @everyone DAVANTE ADAMS', 'Davante Adams — first touchdown scorer'],
+    ['Kyren Williams 2+ Receptions The Giants allow receiving yards to RBs.', 'Kyren Williams 2+ receptions'],
+    ['Something came across my desk that I would like to add to the card: Malachi Fields Over 25.5 Rec Yards (-115)', 'Malachi Fields Over 25.5 receiving yards'],
+  ]) assert.equal(ui.context.window.PitchfordPicks.classify(wording,selection).outcome,'firm');
 });
 
 test('a new capture cannot be saved until its own link is reopened once', async () => {

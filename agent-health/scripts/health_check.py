@@ -280,11 +280,40 @@ def write_outbox(findings: list[Finding]) -> None:
     OUTBOX.parent.mkdir(parents=True, exist_ok=True)
     OUTBOX.write_text('\n'.join(text))
 
+def incident_packets(findings: list[Finding]) -> list[dict]:
+    """Add actionable context without a model call, recovery attempt, or new IO."""
+    owners = {'Sports Picks': 'Sports Picks maintainer', 'Law School': 'Law School maintainer',
+              'Collections': 'Collections maintainer', 'Dashboard': 'Dashboard maintainer'}
+    packets = []
+    for finding in findings:
+        if finding.state not in {'yellow', 'red'}:
+            continue
+        packets.append({
+            'system': finding.system, 'state': finding.state,
+            'suggested_owner': owners.get(finding.system, 'Manager'),
+            'owner_assigned': False,
+            'evidence': finding.evidence,
+            'root_cause': 'Unverified; the finding establishes evidence/status, not root cause.',
+            'run_id': None,
+            'execution_host': None,
+            'context_note': 'Read the original run receipt for its ID and host; do not substitute the checker host.',
+            'recovery_attempts': [],
+            'recovery_note': 'This checker performs observation only; prior agent attempts are unknown.',
+            'next_action': finding.next_action,
+            'completion_test': 'Verify the named condition using fresh original evidence; a green check alone does not prove content accuracy.',
+            'stop_condition': 'Stop when the named condition is resolved or one bounded recovery establishes an exact blocker; no duplicate full run.',
+            'changes_made': False,
+        })
+    return packets
+
 def run(write: bool = True) -> dict:
     findings = [sports(), law(), collections(), dashboard()]
     if write:
         write_outbox(findings)
-    return {'findings':[asdict(finding) for finding in findings], 'claude_outbox': str(OUTBOX) if OUTBOX and OUTBOX.exists() else None}
+    return {'findings':[asdict(finding) for finding in findings],
+            'checked_at': datetime.now(timezone.utc).isoformat(),
+            'incidents': incident_packets(findings),
+            'claude_outbox': str(OUTBOX) if OUTBOX and OUTBOX.exists() else None}
 
 def self_test() -> None:
     with tempfile.TemporaryDirectory() as temp:

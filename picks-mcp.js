@@ -5,6 +5,7 @@
  */
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 const freshness = require('./picks-freshness.js');
 const runState = require('./picks-run-state.js');
@@ -13,12 +14,14 @@ const { evidenceLadderInstruction } = require('./picks-evidence-ladder.js');
 
 const WORKER_URL = process.env.PICKS_WORKER_URL || 'https://pitchford-os-ask.ppitchford02.workers.dev/picks';
 const TOKEN_FILE = process.env.PICKS_TOKEN_FILE || path.join(process.env.HOME || '', 'dashboard', 'picks-agent-token.txt');
+const ROSTER_FILE = process.env.PICKS_ROSTER_FILE || path.join(__dirname, 'picks-roster.json');
 
 const tools = [
   {name:'sports_picks_checkpoint',description:'Call before browser work with startedAt, then immediately after EACH account inventory. Saves exact links locally before freshness; does not interpret or mark covered. Read activeRun.inventory to resume only unfinished accounts. Holds a bounded idle-sleep assertion on Mac during this pass.',inputSchema:{type:'object',properties:{startedAt:{type:'string'},sourceId:{type:'string'},accountId:{type:'string'},status:{type:'string',enum:['checked','blocked']},reason:{type:'string'},candidates:{type:'array',items:{type:'object',properties:{sourceId:{type:'string'},accountId:{type:'string'},sourceUrl:{type:'string'},postedAt:{type:'string'},contentHash:{type:'string'}},required:['sourceId','accountId','sourceUrl'],additionalProperties:true}}},required:['startedAt'],additionalProperties:false}},
   { name:'sports_picks_resolve_post', description:'Record the actual evidence result for ONE released post. Read the full graphic/legend, audio or related creator clarification before giving up. resolved means EVERY recommendation was saved or already exists; excluded needs observed reason (non-pick, settled event or outside NFL/MLB); unresolved stays pending. Never resolve from a listing caption or merely because one pick was saved.', inputSchema:{type:'object',properties:{startedAt:{type:'string'},sourceId:{type:'string'},accountId:{type:'string'},sourceUrl:{type:'string'},status:{type:'string',enum:['resolved','excluded','unresolved']},allSelectionsHandled:{type:'boolean'},reason:{type:'string'},attempts:{type:'array',items:{type:'string'},minItems:1}},required:['startedAt','sourceId','accountId','sourceUrl','status','reason','attempts'],additionalProperties:false}},
   { name: 'sports_picks_freshness', description: 'Run FIRST, before reading or interpreting anything. Give the source identifiers, exact post links, posted timestamps and content hashes you can see without interpreting them. Returns only the material no previous successful receipt already covered. When it returns stop:true it has already written the run receipt and the pass is over: do not read, transcribe, classify or capture anything.', inputSchema: { type:'object', properties:{ startedAt:{type:'string'}, accountsChecked:{type:'integer',minimum:0}, accountsBlocked:{type:'integer',minimum:0}, checksSaved:{type:'integer',minimum:0}, note:{type:'string'}, candidates:{type:'array',items:{type:'object',properties:{sourceId:{type:'string'},accountId:{type:'string'},sourceUrl:{type:'string'},postedAt:{type:'string'},contentHash:{type:'string'}},required:['sourceId','accountId','sourceUrl'],additionalProperties:true}} }, required:['startedAt','candidates'], additionalProperties:false } },
   { name: 'sports_picks_read', description: 'Read the private Sports Picks desk and its configured creator roster. The local automation token is read privately from disk.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
+  { name: 'sports_picks_list_tiktok', description: 'Fallback listing for one configured public TikTok account when its signed-in browser profile grid errors. Uses the already-installed local yt-dlp once, without browser cookies, credentials, login bypass or retries. Returns exact recent post URLs for shallow inventory. A private/embedding-disabled account remains blocked.', inputSchema:{type:'object',properties:{accountId:{type:'string'},limit:{type:'integer',minimum:1,maximum:12}},required:['accountId'],additionalProperties:false} },
   { name: 'sports_picks_capture', description: 'Save one new source pick to the private desk. The Worker derives firm, Lean, or review from originalText. Require eventStartAt (ISO with timezone) and eventTimeSource (official schedule URL). Check current event status; skip started/completed/cancelled games. Never infer game date from post date. Never invent unknown fields.', inputSchema: { type: 'object', properties: { sourceId:{type:'string'}, accountId:{type:'string'}, sport:{type:'string',enum:['NFL','MLB']}, market:{type:'string'}, selection:{type:'string'}, event:{type:'string'}, eventDate:{type:'string'}, eventStartAt:{type:'string'}, eventTimeSource:{type:'string'}, odds:{type:['integer','null']}, postedAt:{type:'string'}, sourceUrl:{type:'string'}, originalText:{type:'string'}, capturedBeforeStart:{type:'boolean'}, checkedUrl:{type:'string'}, checkedAt:{type:'string'} }, required:['sourceId','accountId','sport','market','selection','event','eventDate','eventStartAt','eventTimeSource','sourceUrl','originalText','capturedBeforeStart','checkedUrl','checkedAt'], additionalProperties:false } },
   { name: 'sports_picks_transcribe_video', description: 'Transcribe a creator video locally from its exact post URL, save the private audio transcript, and return its transcript id and spoken words. Use only for the creator’s own video; never captions or comments. Second evidence-ladder step after caption/post text; try OCR next when a visible graphic may hold names or odds.', inputSchema: { type:'object', properties:{sourceId:{type:'string'},accountId:{type:'string'},sourceUrl:{type:'string'}}, required:['sourceId','accountId','sourceUrl'], additionalProperties:false } },
   { name: 'sports_picks_ocr_frames', description: 'Run local OCR on frame image paths already extracted from a creator post. Third step in the evidence ladder after caption/post text and local transcript. Comments are never pick evidence. Returns extracted text only; unknown fields stay null.', inputSchema: { type:'object', properties:{ sourceId:{type:'string'}, accountId:{type:'string'}, sourceUrl:{type:'string'}, framePaths:{type:'array',items:{type:'string'},minItems:1} }, required:['sourceId','accountId','sourceUrl','framePaths'], additionalProperties:false } },
@@ -101,6 +104,43 @@ function keepAwake() {
   awake.on('exit',()=>{awake=null;});
 }
 function releaseAwake() { if (awake) {awake.kill();awake=null;} }
+
+function configuredTikTok(accountId) {
+  let roster;
+  try { roster=JSON.parse(fs.readFileSync(ROSTER_FILE,'utf8')); }
+  catch { throw Error('The private picks roster is unavailable on this Mac.'); }
+  for (const creator of roster) for (const account of creator.accounts || []) {
+    if (account.id === accountId && String(account.platform).toLowerCase() === 'tiktok' && /^https:\/\//.test(account.url || '')) return {sourceId:creator.id,...account};
+  }
+  throw Error('Choose a configured TikTok account from sports_picks_read.');
+}
+
+function listTikTok(args) {
+  const account=configuredTikTok(args.accountId), limit=args.limit || 6;
+  const binary=path.join(process.env.HOME || '', '.local', 'bin', 'yt-dlp');
+  return new Promise((resolve,reject)=>{
+    const child=spawn(binary,['--flat-playlist','--playlist-end',String(limit),'--dump-single-json',account.url],{stdio:['ignore','pipe','pipe']});
+    let output='',errors='';
+    const deadline=setTimeout(()=>{child.kill('SIGKILL');reject(Error('TikTok fallback timed out; checkpoint this account blocked and continue.'));},45000);
+    child.stdout.on('data',chunk=>{output+=chunk;});child.stderr.on('data',chunk=>{errors+=chunk;});
+    child.once('error',error=>{clearTimeout(deadline);reject(error);});
+    child.once('close',code=>{
+      clearTimeout(deadline);
+      if(code){
+        const privateAccount=/private|embedding disabled|log into an account/i.test(errors);
+        return resolve({accountId:account.id,sourceId:account.sourceId,status:'blocked',candidates:[],reason:privateAccount?'TikTok marks this account private or embedding-disabled; the credential-free fallback cannot list it.':'TikTok public listing failed; browser and local fallback are both unavailable.'});
+      }
+      try{
+        const data=JSON.parse(output), candidates=(data.entries || []).filter(item=>item?.id).map(item=>{
+          const sourceUrl=item.webpage_url || `https://www.tiktok.com/@${String(new URL(account.url).pathname).replace(/^\/@?/,'')}/video/${item.id}`;
+          const title=String(item.title || item.description || '').trim();
+          return {sourceId:account.sourceId,accountId:account.id,sourceUrl,postedAt:item.timestamp?new Date(item.timestamp*1000).toISOString():'',contentHash:crypto.createHash('sha256').update(`${item.id}\n${title}`).digest('hex'),title};
+        });
+        resolve({accountId:account.id,sourceId:account.sourceId,status:'checked',candidates,reason:`Local public fallback returned ${candidates.length} recent TikTok post${candidates.length===1?'':'s'} without browser credentials.`});
+      }catch{reject(Error('TikTok fallback returned unreadable data; checkpoint this account blocked and continue.'));}
+    });
+  });
+}
 process.once('exit',releaseAwake);
 function result(value) { return { content:[{type:'text',text:JSON.stringify(value)}] }; }
 function failure(error) { return { content:[{type:'text',text:JSON.stringify({error:error.message})}], isError:true }; }
@@ -175,6 +215,7 @@ async function handle(message) {
       if (!validate(args)) throw new Error('Invalid tool arguments: ' + validate.errors.map(e => `${e.instancePath || '/'} ${e.message}`).join('; '));
       let value;
       if (message.params?.name === 'sports_picks_read') value = {...await request('read'), activeRun:runState.read(__dirname)};
+      else if (message.params?.name === 'sports_picks_list_tiktok') value = await listTikTok(args);
       else if (message.params?.name === 'sports_picks_checkpoint') { const state = runState.checkpoint(__dirname,args); keepAwake(); value = {startedAt:state.startedAt, checkpointSaved:true, accountsCheckpointed:Object.keys(state.inventory || {}).length, unfinishedPosts:runState.summarize(state).pending.length, recoveryFrom:state.recoveryFrom || null, instruction:state.recoveryFrom ? 'Inventory current NFL/MLB posts FIRST on every scheduled pass, even with recoveryFrom. Then process fresh material before retained retries. Old deferred posts are history, not proof of expiry. Never skip discovery because a backlog exists.' : 'Checkpoint each account immediately after inventory.', idleSleepProtection:!!awake}; }
       else if (message.params?.name === 'sports_picks_resolve_post') value = runState.resolve(__dirname,args);
       else if (message.params?.name === 'sports_picks_capture') {
@@ -277,7 +318,7 @@ async function saveVideoEvidence(args, local, send) {
   return {...saved, spokenText:spoken, visualText, visualMedium:'on-screen OCR',
     instruction:'OCR is visual evidence, not spoken words. Check uncertain names and numbers against the creator graphic before saving a pick.'};
 }
-module.exports = { assertUpcoming,handle, classify, tools, saveVideoEvidence};
+module.exports = { assertUpcoming,handle, classify, tools, saveVideoEvidence,configuredTikTok,listTikTok};
 if (require.main === module) {
 let buffer = '';
 let queue = Promise.resolve();

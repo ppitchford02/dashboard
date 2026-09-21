@@ -3,13 +3,21 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url);
-const {handle,tools,saveVideoEvidence}=require('../picks-mcp.js');
+const {handle,tools,saveVideoEvidence,configuredTikTok}=require('../picks-mcp.js');
 const validators=require('../picks-validators.js');
 
 test('compiled validators match every published tool schema',()=>{
   const hash=crypto.createHash('sha256').update(JSON.stringify(tools.map(t=>[t.name,t.inputSchema]))).digest('hex');
   assert.equal(validators.schemaHash,hash);
   for(const tool of tools)assert.equal(typeof validators[tool.name],'function');
+});
+
+test('TikTok fallback accepts only configured TikTok account ids',()=>{
+  assert.equal(configuredTikTok('sbd-tiktok').sourceId,'sbd');
+  assert.throws(()=>configuredTikTok('nick-x'),/configured TikTok/);
+  assert.throws(()=>configuredTikTok('invented-account'),/configured TikTok/);
+  const schema=tools.find(tool=>tool.name==='sports_picks_list_tiktok').inputSchema;
+  assert.equal(schema.properties.limit.maximum,12);
 });
 
 test('invalid tool arguments fail before credentials or network and do not echo evidence',async()=>{

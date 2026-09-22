@@ -132,7 +132,8 @@ function listTikTok(args) {
       }
       try{
         const data=JSON.parse(output), candidates=(data.entries || []).filter(item=>item?.id).map(item=>{
-          const sourceUrl=item.webpage_url || `https://www.tiktok.com/@${String(new URL(account.url).pathname).replace(/^\/@?/,'')}/video/${item.id}`;
+          const accountUrl=new URL(account.url);
+          const sourceUrl=item.webpage_url || new URL(`${accountUrl.pathname.replace(/\/$/,'')}/video/${item.id}`,accountUrl.origin).href;
           const title=String(item.title || item.description || '').trim();
           return {sourceId:account.sourceId,accountId:account.id,sourceUrl,postedAt:item.timestamp?new Date(item.timestamp*1000).toISOString():'',contentHash:crypto.createHash('sha256').update(`${item.id}\n${title}`).digest('hex'),title};
         });

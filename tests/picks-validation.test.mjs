@@ -1,6 +1,9 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url);
 const {handle,tools,saveVideoEvidence,configuredTikTok}=require('../picks-mcp.js');
@@ -13,11 +16,19 @@ test('compiled validators match every published tool schema',()=>{
 });
 
 test('TikTok fallback accepts only configured TikTok account ids',()=>{
-  assert.equal(configuredTikTok('sbd-tiktok').sourceId,'sbd');
-  assert.throws(()=>configuredTikTok('nick-x'),/configured TikTok/);
-  assert.throws(()=>configuredTikTok('invented-account'),/configured TikTok/);
-  const schema=tools.find(tool=>tool.name==='sports_picks_list_tiktok').inputSchema;
-  assert.equal(schema.properties.limit.maximum,12);
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'picks-roster-'));
+  const rosterFile=path.join(dir,'roster.json');
+  fs.writeFileSync(rosterFile,JSON.stringify([{id:'example',accounts:[
+    {id:'example-tiktok',platform:'tiktok',url:'https://example.com/@creator'},
+    {id:'example-other',platform:'other',url:'https://example.com/creator'}
+  ]}]));
+  try {
+    assert.equal(configuredTikTok('example-tiktok',rosterFile).sourceId,'example');
+    assert.throws(()=>configuredTikTok('example-other',rosterFile),/configured TikTok/);
+    assert.throws(()=>configuredTikTok('invented-account',rosterFile),/configured TikTok/);
+    const schema=tools.find(tool=>tool.name==='sports_picks_list_tiktok').inputSchema;
+    assert.equal(schema.properties.limit.maximum,12);
+  } finally { fs.rmSync(dir,{recursive:true,force:true}); }
 });
 
 test('invalid tool arguments fail before credentials or network and do not echo evidence',async()=>{

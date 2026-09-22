@@ -105,9 +105,9 @@ function keepAwake() {
 }
 function releaseAwake() { if (awake) {awake.kill();awake=null;} }
 
-function configuredTikTok(accountId) {
+function configuredTikTok(accountId, rosterFile=ROSTER_FILE) {
   let roster;
-  try { roster=JSON.parse(fs.readFileSync(ROSTER_FILE,'utf8')); }
+  try { roster=JSON.parse(fs.readFileSync(rosterFile,'utf8')); }
   catch { throw Error('The private picks roster is unavailable on this Mac.'); }
   for (const creator of roster) for (const account of creator.accounts || []) {
     if (account.id === accountId && String(account.platform).toLowerCase() === 'tiktok' && /^https:\/\//.test(account.url || '')) return {sourceId:creator.id,...account};

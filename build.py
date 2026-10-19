@@ -346,6 +346,7 @@ def main():
         "{{CORE_JS}}": (HERE / 'dashboard-core.js').read_text(),
         "{{DASHBOARD_JS}}": (HERE / 'dashboard.js').read_text(),
         "{{PLANNER_JS}}": (HERE / "daily-planner.js").read_text(),
+        "{{WORK_TASKS_JS}}": (HERE / "work-task-desk.js").read_text(),
         "{{PICKS_JS}}": (HERE / 'picks.js').read_text(),
         "{{PARLAY_JS}}": (HERE / 'parlay-builder.js').read_text(),
         "{{NEWS}}": news_block(now, write=not (check or preview)),

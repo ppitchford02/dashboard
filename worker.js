@@ -125,6 +125,7 @@ export default {
     const route = new URL(request.url).pathname;
     if (route === "/picks") return handlePicksRequest(request, env);
     if (route === "/planner") return handlePlannerRequest(request, env);
+    if (route === "/work-tasks") return handleWorkTasksRequest(request, env);
     const origin = env.ALLOWED_ORIGIN || "*";
 
     if (request.method === "GET" && new URL(request.url).pathname === "/health") {
@@ -1305,5 +1306,71 @@ export async function handlePlannerRequest(request, env) {
     if (error instanceof PlannerError) return plannerReply({ error: error.message }, error.status);
     if (error instanceof PickError) return plannerReply({ error: error.message }, error.status);
     return plannerReply({ error: "Today's list is temporarily unavailable. Your list is kept on this device; please retry." }, 503);
+  }
+}
+
+
+// Private snapshot mirror; local work_tasks.py remains the canonical queue.
+// This route never enters the model, public data.json, GitHub or the daily planner.
+export async function handleWorkTasksRequest(request, env) {
+  const reply = (body, status = 200) => plannerReply(body, status);
+  if (request.method === "OPTIONS") return new Response(null, {status:204,headers:plannerHeaders()});
+  if (request.method !== "POST") return reply({error:"POST only"},405);
+  try {
+    const origin = request.headers.get("origin");
+    if (origin && origin !== PLANNER_ORIGIN) return reply({error:"Use the dashboard origin."},403);
+    if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) return reply({error:"Send JSON."},415);
+    const raw = await request.text();
+    if (raw.length > 300000) return reply({error:"Task snapshot is too large."},413);
+    let body;
+    try {body=JSON.parse(raw);} catch {return reply({error:"Invalid request."},400);}
+    if (!body || typeof body !== "object" || Array.isArray(body)) return reply({error:"Invalid request."},400);
+    if (!env.DASH_PASSPHRASE || body.pass !== env.DASH_PASSPHRASE) return reply({error:"Unlock the dashboard."},401);
+    if (!["read","sync"].includes(body.action)) return reply({error:"Unsupported task action."},400);
+    const db=env.PLANNER_DB || env.PICKS_DB;
+    if (!db) return reply({error:"Private task mirror unavailable."},503);
+    const owner="dashboard-owner";
+    const read=async()=> {
+      const row=await db.prepare("SELECT * FROM work_task_mirror WHERE owner=?").bind(owner).first();
+      return row ? {revision:row.revision,tasks:JSON.parse(row.payload),synced_at:row.synced_at}
+                 : {revision:0,tasks:[],synced_at:null};
+    };
+    if (body.action === "read") return reply(await read());
+    if (!Number.isInteger(body.revision) || body.revision < 0 || !Array.isArray(body.tasks) || body.tasks.length>200) return reply({error:"Invalid snapshot."},400);
+    const cleanText=(v,n=2000)=> {
+      if (typeof v!=="string" || v.length>n || /(?:sk-ant-[a-z0-9_-]{12,}|gh[pousr]_[a-z0-9_]{20,}|bearer\s+\S{12,}|(?:api[_-]?key|password|access_token|refresh_token)\s*[:=]\s*\S+)/i.test(v)) throw new Error("INVALID_SNAPSHOT");
+      return v;
+    };
+    const seen=new Set();
+    const tasks=body.tasks.map(t=> {
+      if (!t || typeof t!=="object" || !/^[a-f0-9]{20}$/.test(t.id) || seen.has(t.id)) throw new Error("INVALID_SNAPSHOT");
+      seen.add(t.id);
+      if (!["proposed","open","in_progress","waiting","blocked","done","cancelled"].includes(t.status)) throw new Error("INVALID_SNAPSHOT");
+      const source=cleanText(t.source);
+      if (!source.startsWith("/")) {
+        const u=new URL(source);
+        if (!["https:","codex:"].includes(u.protocol) || u.username || u.password) throw new Error("INVALID_SNAPSHOT");
+      }
+      if (t.due!==null && (typeof t.due!=="string" || !/(Z|[+-]\d\d:\d\d)$/.test(t.due) || !Number.isFinite(Date.parse(t.due)))) throw new Error("INVALID_SNAPSHOT");
+      const receipt=t.completion_receipt;
+      let completion_receipt=null;
+      if (receipt) {
+        if (!["PASS","NOT_COMPLETE"].includes(receipt.verdict)) throw new Error("INVALID_SNAPSHOT");
+        completion_receipt={verdict:receipt.verdict,reviewer:cleanText(receipt.reviewer,120),at:cleanText(receipt.at,80)};
+      }
+      return {id:t.id,title:cleanText(t.title,300),project:cleanText(t.project,100),owner:cleanText(t.owner,120),
+              status:t.status,source,due:t.due,waiting_on:cleanText(t.waiting_on||"",300),
+              reason:cleanText(t.reason||"",1000),completion_receipt};
+    });
+    const current=await read();
+    if (current.revision!==body.revision) return reply({error:"Task mirror changed; read it before syncing.",conflict:true,revision:current.revision},409);
+    const stamp=new Date().toISOString(),payload=JSON.stringify(tasks);
+    let result;
+    if (current.revision===0) result=await db.prepare("INSERT INTO work_task_mirror(owner,revision,payload,synced_at) SELECT ?,1,?,? WHERE NOT EXISTS (SELECT 1 FROM work_task_mirror WHERE owner=?)").bind(owner,payload,stamp,owner).run();
+    else result=await db.prepare("UPDATE work_task_mirror SET payload=?,synced_at=?,revision=revision+1 WHERE owner=? AND revision=?").bind(payload,stamp,owner,current.revision).run();
+    if (result.meta?.changes!==1) return reply({error:"Task mirror changed; sync refused.",conflict:true},409);
+    return reply({revision:current.revision+1,count:tasks.length,synced_at:stamp});
+  } catch {
+    return reply({error:"Task mirror unavailable or snapshot invalid; local queue unchanged."},503);
   }
 }

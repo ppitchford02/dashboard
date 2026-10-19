@@ -46,12 +46,18 @@
         host.append(card);
       }
       state.textContent = data.synced_at
-        ? `Snapshot synced ${data.synced_at}. ${tasks.length} open tasks. Not a live inbox scan.`
+        ? `Snapshot synced ${data.synced_at}. ${tasks.length} open ${tasks.length === 1 ? 'task' : 'tasks'}. Not a live inbox scan.`
         : 'No shared snapshot has been synced. This does not mean there are no outstanding requests.';
     } catch {
       state.textContent = 'Shared tasks could not be refreshed. Any displayed snapshot is stale; the private local queue is unchanged.';
     } finally { pending = false; refresh.disabled = false; }
   }
   refresh.addEventListener('click', load);
+  // Poll only the private mirror, while this tab is visible and already unlocked.
+  // Never open a password prompt or invoke a model from an automatic refresh.
+  const autoLoad = () => { if (api?.hasPass() && !document.hidden) return load(); };
+  if (typeof window.setInterval === 'function') window.setInterval(autoLoad, 60000);
+  if (typeof document.addEventListener === 'function') document.addEventListener('visibilitychange', autoLoad);
+  if (typeof window.addEventListener === 'function') window.addEventListener('focus', autoLoad);
   window.PitchfordWorkTasks = {init(provided) { api = provided; if (api.hasPass()) load(); }};
 })();

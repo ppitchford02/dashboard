@@ -104,3 +104,37 @@ test('never-synced empty list is not described as no outstanding obligations',as
  const view=ui(async()=>({tasks:[],synced_at:null}));await view.load();
  assert.match(view.get('work-task-state').textContent,/does not mean there are no outstanding/);
 });
+
+test('sync token gets revision only, uploads snapshots, and cannot read private tasks',async()=>{
+ const database=db(),e={...env(database),WORK_TASK_SYNC_TOKEN:'f'.repeat(64)};
+ const auth={sync_token:e.WORK_TASK_SYNC_TOKEN};
+ assert.deepEqual(await (await worker.fetch(request({...auth,action:'cursor'}),e)).json(),{revision:0});
+ assert.equal((await worker.fetch(request({...auth,action:'sync',revision:0,tasks:[item()]}),e)).status,200);
+ assert.deepEqual(await (await worker.fetch(request({...auth,action:'cursor'}),e)).json(),{revision:1});
+ assert.equal((await worker.fetch(request({...auth,action:'read'}),e)).status,403);
+ assert.equal((await worker.fetch(request({...auth,action:'toggle'}),e)).status,403);
+ for(const route of ['/planner','/picks','/']) {
+  const r=request({...auth,action:'read'});
+  const response=await worker.fetch(new Request('https://example.org'+route,r),e);
+  assert.equal(response.status,401);
+ }
+});
+test('unset, short and incorrect sync tokens fail closed before touching storage',async()=>{
+ const bad={prepare(){throw new Error('DB must not be read');}};
+ for(const token of [undefined,'short','e'.repeat(64)]) {
+  const e={...env(bad),WORK_TASK_SYNC_TOKEN:'f'.repeat(64)};
+  assert.equal((await worker.fetch(request({sync_token:token,action:'cursor'}),e)).status,401);
+ }
+});
+test('automatic refresh is visible/unlocked only and uses bounded one-minute cadence',async()=>{
+ const listeners={},winEvents={},ids=new Map();let timer,delay,calls=0,unlocked=false;
+ const get=id=>{if(!ids.has(id))ids.set(id,{children:[],textContent:'',addEventListener(){},replaceChildren(){this.children=[];},append(){}});return ids.get(id);};
+ const document={hidden:false,getElementById:get,createElement:()=>({}),addEventListener:(name,fn)=>listeners[name]=fn};
+ const window={setInterval:(fn,ms)=>{timer=fn;delay=ms;},addEventListener:(name,fn)=>winEvents[name]=fn};
+ vm.runInNewContext(uiSource,{document,window,URL,Date});
+ window.PitchfordWorkTasks.init({hasPass:()=>unlocked,request:async()=>{calls++;return {tasks:[],synced_at:'today'};}});
+ assert.equal(delay,60000);await timer();assert.equal(calls,0);
+ unlocked=true;document.hidden=true;await timer();assert.equal(calls,0);
+ document.hidden=false;await listeners.visibilitychange();assert.equal(calls,1);
+ await timer();assert.equal(calls,2);await winEvents.focus();assert.equal(calls,3);
+});

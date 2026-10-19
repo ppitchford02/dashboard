@@ -1325,8 +1325,11 @@ export async function handleWorkTasksRequest(request, env) {
     let body;
     try {body=JSON.parse(raw);} catch {return reply({error:"Invalid request."},400);}
     if (!body || typeof body !== "object" || Array.isArray(body)) return reply({error:"Invalid request."},400);
-    if (!env.DASH_PASSPHRASE || body.pass !== env.DASH_PASSPHRASE) return reply({error:"Unlock the dashboard."},401);
-    if (!["read","sync"].includes(body.action)) return reply({error:"Unsupported task action."},400);
+    const ownerAuth = !!env.DASH_PASSPHRASE && body.pass === env.DASH_PASSPHRASE;
+    const syncAuth = secretMatches(body.sync_token, env.WORK_TASK_SYNC_TOKEN);
+    if (!ownerAuth && !syncAuth) return reply({error:"Unlock the dashboard."},401);
+    if (!ownerAuth && !["cursor","sync"].includes(body.action)) return reply({error:"Sync credential permits uploads only."},403);
+    if (!["read","cursor","sync"].includes(body.action)) return reply({error:"Unsupported task action."},400);
     const db=env.PLANNER_DB || env.PICKS_DB;
     if (!db) return reply({error:"Private task mirror unavailable."},503);
     const owner="dashboard-owner";
@@ -1335,6 +1338,7 @@ export async function handleWorkTasksRequest(request, env) {
       return row ? {revision:row.revision,tasks:JSON.parse(row.payload),synced_at:row.synced_at}
                  : {revision:0,tasks:[],synced_at:null};
     };
+    if (body.action === "cursor") return reply({revision:(await read()).revision});
     if (body.action === "read") return reply(await read());
     if (!Number.isInteger(body.revision) || body.revision < 0 || !Array.isArray(body.tasks) || body.tasks.length>200) return reply({error:"Invalid snapshot."},400);
     const cleanText=(v,n=2000)=> {
